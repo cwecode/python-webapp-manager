@@ -1,0 +1,21 @@
+{
+  "id": "demo-app",
+  "display_name": "Demo App",
+  "mode": "both",
+  "repo_path": "..\\..\\demo-app",
+  "branch": "main",
+  "python_path": "..\\..\\demo-app\\.venv\\Scripts\\python.exe",
+  "venv_path": "..\\..\\demo-app\\.venv",
+  "entry_kind": "uvicorn",
+  "entry_target": "main:app",
+  "host": "127.0.0.1",
+  "port": 8000,
+  "health_url": "http://127.0.0.1:8000/health",
+  "env_file": "..\\..\\demo-app\\.env",
+  "requirements_file": "..\\..\\demo-app\\requirements.txt",
+  "init_command": null,
+  "service_name": "demo-app",
+  "log_dir": "..\\..\\logs\\demo-app",
+  "winsw_exe_path": "..\\..\\tools\\WinSW-x64.exe",
+  "autostart_prod": false
+}
