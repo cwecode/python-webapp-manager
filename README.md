@@ -24,7 +24,7 @@ Der aktuelle Stand ist ein erster vertikaler Slice:
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -e .[dev]
+pip install -r requirements.txt
 app-manager
 ```
 
