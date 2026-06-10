@@ -21,6 +21,17 @@ Der aktuelle Stand ist ein erster vertikaler Slice:
 
 ## Start
 
+### Entwicklung
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+app-manager
+```
+
+### Betrieb / Server
+
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -31,6 +42,7 @@ app-manager
 Die App liest Konfigurationen aus `configs/apps/*.json`.
 Fuer ein oeffentliches Repo ist nur das Beispiel `configs/apps/example.app.json.example` versioniert.
 Lokale App-Configs bleiben bewusst unversioniert und muessen als eigene `*.json`-Dateien unter `configs/apps/` angelegt werden.
+Der Modus der verwalteten Apps (`dev`, `prod`, `both`) wird ueber die jeweilige App-Konfiguration gesteuert, nicht ueber `requirements*.txt`.
 
 ## Konfigurationsformat
 

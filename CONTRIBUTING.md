@@ -15,7 +15,7 @@ Thanks for contributing to `python-webapp-manager`.
 py -3.9 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -e .[dev]
+pip install -r requirements-dev.txt
 ```
 
 ## Development workflow
