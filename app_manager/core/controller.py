@@ -3,12 +3,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from app_manager.core.discovery import WindowsAppDiscovery
 from app_manager.core.health import HealthChecker
 from app_manager.core.process_runner import ProcessRunner
 from app_manager.core.runtime_store import RuntimeStore
 from app_manager.core.service_runner import ServiceRunner
 from app_manager.core.updater import AppUpdater
-from app_manager.models import ActionResult, AppConfig, AppSnapshot, RuntimeStatus
+from app_manager.models import ActionResult, AppConfig, AppSnapshot, DiscoveredApp, RuntimeStatus
 
 
 class AppController:
@@ -18,11 +19,13 @@ class AppController:
         service_runner: ServiceRunner,
         updater: AppUpdater,
         health_checker: HealthChecker,
+        discovery: WindowsAppDiscovery | None = None,
     ) -> None:
         self.process_runner = process_runner
         self.service_runner = service_runner
         self.updater = updater
         self.health_checker = health_checker
+        self.discovery = discovery or WindowsAppDiscovery()
         self.runtime_store = RuntimeStore(process_runner.runtime_root)
 
     def snapshot(self, config: AppConfig) -> AppSnapshot:
@@ -111,6 +114,12 @@ class AppController:
             update_result = ActionResult(True, f"{update_result.message}; restarted prod runtime")
 
         return self._record(config, "update_app", update_result)
+
+    def discover_apps(self) -> list[DiscoveredApp]:
+        return self.discovery.discover()
+
+    def suggested_config(self, app: DiscoveredApp) -> dict[str, object]:
+        return self.discovery.suggest_config(app)
 
     def _record(self, config: AppConfig, action_name: str, result: ActionResult) -> ActionResult:
         self.runtime_store.write_last_action(config, action_name, result)

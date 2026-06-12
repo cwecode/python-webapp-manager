@@ -1,0 +1,305 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Callable
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QScrollArea,
+    QSpinBox,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app_manager.models import AppConfig, ConfigValidationError, DiscoveredApp
+
+
+class DiscoveryDialog(QDialog):
+    def __init__(
+        self,
+        config_base_dir: Path,
+        discovered_apps: list[DiscoveredApp],
+        suggest_config: Any,
+        ignore_callback: Callable[[DiscoveredApp], bool],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._config_base_dir = config_base_dir
+        self._discovered_apps = discovered_apps
+        self._suggest_config = suggest_config
+        self._ignore_callback = ignore_callback
+        self._selected_config: AppConfig | None = None
+        self._field_widgets: dict[str, object] = {}
+
+        self.setWindowTitle("Scan Local Services")
+        self.resize(1100, 720)
+
+        root_layout = QVBoxLayout(self)
+        intro = QLabel(
+            "Review detected listeners and adjust the generated config before saving. "
+            "Detected ports and process details are reliable; repo paths and entry targets may need manual correction. "
+            "Prod mode is only preselected for WinSW-backed services."
+        )
+        intro.setWordWrap(True)
+        root_layout.addWidget(intro)
+
+        splitter = QSplitter(Qt.Horizontal)
+        root_layout.addWidget(splitter, 1)
+
+        self.result_table = QTableWidget(0, 6)
+        self.result_table.setHorizontalHeaderLabels(["Name", "Port", "PID", "Address", "Process", "Service"])
+        self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.result_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.result_table.setSortingEnabled(True)
+        self.result_table.itemSelectionChanged.connect(self._on_selection_changed)
+        header = self.result_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        splitter.addWidget(self.result_table)
+
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        splitter.addWidget(right_panel)
+
+        self.detected_label = QLabel("No result selected")
+        self.detected_label.setWordWrap(True)
+        right_layout.addWidget(self.detected_label)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_container = QWidget()
+        self.form_layout = QFormLayout(scroll_container)
+        scroll_area.setWidget(scroll_container)
+        right_layout.addWidget(scroll_area, 1)
+
+        self._build_form()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        ignore_button = buttons.addButton("Ignore Selected", QDialogButtonBox.ActionRole)
+        ignore_button.clicked.connect(self._ignore_selected)
+        self._save_button = buttons.button(QDialogButtonBox.Save)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        root_layout.addWidget(buttons)
+
+        self._populate_results(discovered_apps)
+
+        if discovered_apps:
+            self.result_table.selectRow(0)
+        else:
+            self._save_button.setEnabled(False)
+
+    @property
+    def selected_config(self) -> AppConfig | None:
+        return self._selected_config
+
+    def set_suggested_payload(self, payload: dict[str, Any]) -> None:
+        self._line_edit("id").setText(str(payload["id"]))
+        self._line_edit("display_name").setText(str(payload["display_name"]))
+        self._combo_box("mode").setCurrentText(str(payload["mode"]))
+        self._line_edit("repo_path").setText(str(payload["repo_path"]))
+        self._line_edit("branch").setText(str(payload["branch"]))
+        self._line_edit("python_path").setText(str(payload["python_path"]))
+        self._line_edit("venv_path").setText(str(payload["venv_path"]))
+        self._combo_box("entry_kind").setCurrentText(str(payload["entry_kind"]))
+        self._line_edit("entry_target").setText(str(payload["entry_target"]))
+        self._line_edit("host").setText(str(payload["host"]))
+        self._spin_box("port").setValue(int(payload["port"]))
+        self._line_edit("health_url").setText("" if payload["health_url"] is None else str(payload["health_url"]))
+        self._line_edit("env_file").setText("" if payload["env_file"] is None else str(payload["env_file"]))
+        self._line_edit("requirements_file").setText(
+            "" if payload["requirements_file"] is None else str(payload["requirements_file"])
+        )
+        self._line_edit("init_command").setText("" if payload["init_command"] is None else str(payload["init_command"]))
+        self._line_edit("service_name").setText(str(payload["service_name"]))
+        self._line_edit("log_dir").setText(str(payload["log_dir"]))
+        self._line_edit("winsw_exe_path").setText(str(payload["winsw_exe_path"]))
+        self._check_box("autostart_prod").setChecked(bool(payload["autostart_prod"]))
+
+    def _build_form(self) -> None:
+        self._add_line("id", "ID")
+        self._add_line("display_name", "Display name")
+        self._add_combo("mode", "Mode", ["dev", "prod", "both"])
+        self._add_line("repo_path", "Repo path")
+        self._add_line("branch", "Branch")
+        self._add_line("python_path", "Python path")
+        self._add_line("venv_path", "Venv path")
+        self._add_combo("entry_kind", "Entry kind", ["uvicorn", "waitress"])
+        self._add_line("entry_target", "Entry target")
+        self._add_line("host", "Host")
+        self._add_spin("port", "Port", 1, 65535)
+        self._add_line("health_url", "Health URL")
+        self._add_line("env_file", "Env file")
+        self._add_line("requirements_file", "Requirements file")
+        self._add_line("init_command", "Init command")
+        self._add_line("service_name", "Service name")
+        self._add_line("log_dir", "Log dir")
+        self._add_line("winsw_exe_path", "WinSW exe path")
+        self._add_check("autostart_prod", "Autostart prod")
+
+    def _populate_results(self, discovered_apps: list[DiscoveredApp]) -> None:
+        self.result_table.setSortingEnabled(False)
+        self.result_table.setRowCount(len(discovered_apps))
+
+        for row, app in enumerate(discovered_apps):
+            name_item = QTableWidgetItem(app.display_name)
+            name_item.setData(Qt.UserRole, app)
+            self.result_table.setItem(row, 0, name_item)
+
+            port_item = QTableWidgetItem(str(app.port))
+            port_item.setData(Qt.EditRole, app.port)
+            self.result_table.setItem(row, 1, port_item)
+
+            pid_item = QTableWidgetItem(str(app.pid))
+            pid_item.setData(Qt.EditRole, app.pid)
+            self.result_table.setItem(row, 2, pid_item)
+
+            self.result_table.setItem(row, 3, QTableWidgetItem(app.local_address))
+            self.result_table.setItem(row, 4, QTableWidgetItem(app.process_name))
+            self.result_table.setItem(row, 5, QTableWidgetItem(app.service_name or "-"))
+
+        self.result_table.setSortingEnabled(True)
+        self.result_table.sortItems(1, Qt.AscendingOrder)
+
+    def _on_selection_changed(self) -> None:
+        current_row = self.result_table.currentRow()
+        if current_row < 0:
+            return
+
+        item = self.result_table.item(current_row, 0)
+        if item is None:
+            return
+
+        app = item.data(Qt.UserRole)
+        if not isinstance(app, DiscoveredApp):
+            return
+
+        self.detected_label.setText(
+            f"Detected {app.display_name} | pid={app.pid} | process={app.process_name} | "
+            f"bind={app.local_address}:{app.port} | service={app.service_name or '-'} | "
+            f"exe={app.executable_path or '-'}"
+        )
+        self.set_suggested_payload(self._suggest_config(app))
+
+    def _save(self) -> None:
+        payload = {
+            "id": self._line_edit("id").text().strip(),
+            "display_name": self._line_edit("display_name").text().strip(),
+            "mode": self._combo_box("mode").currentText(),
+            "repo_path": self._line_edit("repo_path").text().strip(),
+            "branch": self._line_edit("branch").text().strip(),
+            "python_path": self._line_edit("python_path").text().strip(),
+            "venv_path": self._line_edit("venv_path").text().strip(),
+            "entry_kind": self._combo_box("entry_kind").currentText(),
+            "entry_target": self._line_edit("entry_target").text().strip(),
+            "host": self._line_edit("host").text().strip(),
+            "port": self._spin_box("port").value(),
+            "health_url": _empty_to_none(self._line_edit("health_url").text()),
+            "env_file": _empty_to_none(self._line_edit("env_file").text()),
+            "requirements_file": _empty_to_none(self._line_edit("requirements_file").text()),
+            "init_command": _empty_to_none(self._line_edit("init_command").text()),
+            "service_name": self._line_edit("service_name").text().strip(),
+            "log_dir": self._line_edit("log_dir").text().strip(),
+            "winsw_exe_path": self._line_edit("winsw_exe_path").text().strip(),
+            "autostart_prod": self._check_box("autostart_prod").isChecked(),
+        }
+        try:
+            self._selected_config = AppConfig.from_dict(payload, base_dir=self._config_base_dir)
+        except ConfigValidationError as exc:
+            QMessageBox.critical(self, "Invalid Config", "\n".join(exc.errors))
+            return
+        self.accept()
+
+    def _ignore_selected(self) -> None:
+        app = self._selected_discovered_app()
+        if app is None:
+            QMessageBox.information(self, "Ignore Scan Result", "Select a scan result first.")
+            return
+
+        if not self._ignore_callback(app):
+            return
+
+        current_row = self.result_table.currentRow()
+        if current_row >= 0:
+            self.result_table.removeRow(current_row)
+
+        if self.result_table.rowCount() > 0:
+            self.result_table.selectRow(min(current_row, self.result_table.rowCount() - 1))
+            self._save_button.setEnabled(True)
+        else:
+            self.detected_label.setText("All current scan results are ignored.")
+            self._save_button.setEnabled(False)
+
+    def _add_line(self, field_name: str, label: str) -> None:
+        widget = QLineEdit()
+        self._field_widgets[field_name] = widget
+        self.form_layout.addRow(QLabel(label), widget)
+
+    def _add_combo(self, field_name: str, label: str, values: list[str]) -> None:
+        widget = QComboBox()
+        widget.addItems(values)
+        self._field_widgets[field_name] = widget
+        self.form_layout.addRow(QLabel(label), widget)
+
+    def _add_spin(self, field_name: str, label: str, minimum: int, maximum: int) -> None:
+        widget = QSpinBox()
+        widget.setRange(minimum, maximum)
+        self._field_widgets[field_name] = widget
+        self.form_layout.addRow(QLabel(label), widget)
+
+    def _add_check(self, field_name: str, label: str) -> None:
+        widget = QCheckBox()
+        self._field_widgets[field_name] = widget
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(widget)
+        layout.addStretch(1)
+        self.form_layout.addRow(QLabel(label), row)
+
+    def _line_edit(self, field_name: str) -> QLineEdit:
+        return self._field_widgets[field_name]  # type: ignore[return-value]
+
+    def _combo_box(self, field_name: str) -> QComboBox:
+        return self._field_widgets[field_name]  # type: ignore[return-value]
+
+    def _spin_box(self, field_name: str) -> QSpinBox:
+        return self._field_widgets[field_name]  # type: ignore[return-value]
+
+    def _check_box(self, field_name: str) -> QCheckBox:
+        return self._field_widgets[field_name]  # type: ignore[return-value]
+
+    def _selected_discovered_app(self) -> DiscoveredApp | None:
+        current_row = self.result_table.currentRow()
+        if current_row < 0:
+            return None
+        item = self.result_table.item(current_row, 0)
+        if item is None:
+            return None
+        app = item.data(Qt.UserRole)
+        if not isinstance(app, DiscoveredApp):
+            return None
+        return app
+
+
+def _empty_to_none(value: str) -> str | None:
+    stripped = value.strip()
+    return stripped or None

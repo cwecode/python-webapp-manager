@@ -1,0 +1,10 @@
+{
+  "apps_dir": "C:\\ProgramData\\python-webapp-manager\\apps",
+  "install_dir": "C:\\ProgramData\\python-webapp-manager",
+  "runtime_dir": "C:\\ProgramData\\python-webapp-manager\\runtime",
+  "tools_dir": "C:\\ProgramData\\python-webapp-manager\\tools",
+  "logs_dir": "C:\\ProgramData\\python-webapp-manager\\logs",
+  "winsw_exe_path": "C:\\ProgramData\\python-webapp-manager\\tools\\WinSW-x64.exe",
+  "scan_ignore_rules": [],
+  "initialized": false
+}

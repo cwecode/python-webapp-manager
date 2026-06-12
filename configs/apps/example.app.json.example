@@ -15,7 +15,7 @@
   "requirements_file": "..\\..\\demo-app\\requirements.txt",
   "init_command": null,
   "service_name": "demo-app",
-  "log_dir": "..\\..\\logs\\demo-app",
-  "winsw_exe_path": "..\\..\\tools\\WinSW-x64.exe",
+  "log_dir": "C:\\ProgramData\\python-webapp-manager\\logs\\demo-app",
+  "winsw_exe_path": "C:\\ProgramData\\python-webapp-manager\\tools\\WinSW-x64.exe",
   "autostart_prod": false
 }

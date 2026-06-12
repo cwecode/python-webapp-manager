@@ -39,6 +39,22 @@ pip install -r requirements.txt
 app-manager
 ```
 
+Beim ersten Start fuehrt dich die App durch eine kurze Einrichtung fuer `apps_dir` und den zentralen Installationsordner unter `C:\ProgramData\python-webapp-manager`.
+Die empfohlene Struktur ist ein einzelner Root-Ordner:
+
+```text
+C:\ProgramData\python-webapp-manager\
+  apps\
+  runtime\
+  tools\
+  logs\
+```
+
+Im Setup waehlst du deshalb nur den Root-Ordner. Die Unterordner werden automatisch abgeleitet.
+Die App prueft dabei im Hintergrund, ob bereits eine WinSW-Installation in typischen Windows-Ordnern vorhanden ist.
+Fuer WinSW kannst du dann entweder den verwalteten Standardpfad unter `tools\` verwenden oder einen erkannten bzw. manuell ausgewaehlten Pfad uebernehmen.
+Die lokale Maschinenkonfiguration wird als `configs/manager.json` erzeugt und ist bewusst nicht versioniert.
+
 Die App liest Konfigurationen aus `configs/apps/*.json`.
 Fuer ein oeffentliches Repo ist nur das Beispiel `configs/apps/example.app.json.example` versioniert.
 Lokale App-Configs bleiben bewusst unversioniert und muessen als eigene `*.json`-Dateien unter `configs/apps/` angelegt werden.
@@ -75,4 +91,4 @@ Optionale Felder:
 
 - Zielplattform ist Windows.
 - Service-Management setzt WinSW und passende Rechte voraus.
-- Im Dev-Modus werden Laufzeitdateien in `runtime/<app-id>/` geschrieben.
+- Laufzeitdateien, Tools und Logs werden standardmaessig unter `C:\ProgramData\python-webapp-manager\` verwaltet.

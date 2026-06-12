@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QGridLayout,
@@ -12,16 +14,20 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
+from app_manager.core.installation import InstallationManager
 from app_manager.core.controller import AppController
 from app_manager.core.registry import AppRegistry
-from app_manager.models import AppConfig, AppSnapshot, ConfigValidationError
+from app_manager.models import AppConfig, AppSnapshot, ConfigValidationError, ManagerConfig, ScanIgnoreRule, filter_discovered_apps
+from app_manager.ui.discovery_dialog import DiscoveryDialog
 from app_manager.ui.log_viewer import LogViewer
+from app_manager.ui.manager_settings_dialog import ManagerSettingsDialog
 
 
 @dataclass
@@ -30,17 +36,41 @@ class AppContext:
     snapshot: AppSnapshot
 
 
+class ScanWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, controller: AppController) -> None:
+        super().__init__()
+        self.controller = controller
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(self.controller.discover_apps())
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
-        registry: AppRegistry,
-        controller: AppController,
+        manager_config: ManagerConfig,
+        manager_config_path: Path,
+        installation_manager: InstallationManager,
+        controller_factory: Callable[[ManagerConfig], AppController],
     ) -> None:
         super().__init__()
-        self.registry = registry
-        self.controller = controller
+        self.manager_config = manager_config
+        self.manager_config_path = manager_config_path
+        self.installation_manager = installation_manager
+        self._controller_factory = controller_factory
+        self.registry = AppRegistry(manager_config.apps_dir)
+        self.controller = controller_factory(manager_config)
         self._apps: list[AppConfig] = []
         self._snapshots: dict[str, AppSnapshot] = {}
+        self._scan_thread: QThread | None = None
+        self._scan_worker: ScanWorker | None = None
+        self._scan_progress: QProgressDialog | None = None
 
         self.setWindowTitle("App Manager")
         self.resize(1200, 720)
@@ -113,6 +143,18 @@ class MainWindow(QMainWindow):
         self.open_logs_button = QPushButton("Open Logs")
         self.open_logs_button.clicked.connect(self.open_logs)
         action_grid.addWidget(self.open_logs_button, 2, 2)
+
+        self.scan_button = QPushButton("Scan Services")
+        self.scan_button.clicked.connect(self.scan_services)
+        action_grid.addWidget(self.scan_button, 2, 3)
+
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.clicked.connect(self.open_settings)
+        action_grid.addWidget(self.settings_button, 2, 4)
+
+        self.scan_status_label = QLabel("Scan status: not started")
+        self.scan_status_label.setWordWrap(True)
+        right_layout.addWidget(self.scan_status_label)
 
         logs_row = QHBoxLayout()
         right_layout.addLayout(logs_row)
@@ -256,6 +298,176 @@ class MainWindow(QMainWindow):
         self._show_result(result.ok, result.message)
         self.reload_apps(show_errors=False)
 
+    def open_settings(self) -> None:
+        dialog = ManagerSettingsDialog(
+            self.manager_config,
+            base_dir=self.installation_manager.base_dir,
+            setup_mode=False,
+            allow_uninstall=True,
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted or dialog.selected_config is None:
+            return
+
+        if dialog.request_uninstall:
+            self._uninstall_managed_assets(dialog.selected_config)
+            return
+
+        self._save_and_reload_manager_config(dialog.selected_config)
+
+    def scan_services(self) -> None:
+        if self._scan_thread is not None:
+            return
+
+        self.scan_button.setEnabled(False)
+        self.scan_status_label.setText("Scan status: scanning local services and listening ports...")
+        self._scan_progress = QProgressDialog("Scanning local services...", "", 0, 0, self)
+        self._scan_progress.setWindowTitle("Scan Services")
+        self._scan_progress.setCancelButton(None)
+        self._scan_progress.setMinimumDuration(0)
+        self._scan_progress.setWindowModality(Qt.WindowModal)
+        self._scan_progress.show()
+
+        self._scan_thread = QThread(self)
+        self._scan_worker = ScanWorker(self.controller)
+        self._scan_worker.moveToThread(self._scan_thread)
+        self._scan_thread.started.connect(self._scan_worker.run)
+        self._scan_worker.finished.connect(self._on_scan_finished)
+        self._scan_worker.failed.connect(self._on_scan_failed)
+        self._scan_worker.finished.connect(self._scan_thread.quit)
+        self._scan_worker.failed.connect(self._scan_thread.quit)
+        self._scan_thread.finished.connect(self._cleanup_scan)
+        self._scan_thread.start()
+
+    def _on_scan_finished(self, discovered_apps: object) -> None:
+        results = discovered_apps if isinstance(discovered_apps, list) else []
+        visible_results, ignored_count = filter_discovered_apps(results, list(self.manager_config.scan_ignore_rules))
+        if not visible_results:
+            if ignored_count:
+                self.scan_status_label.setText(
+                    f"Scan status: no visible results. {ignored_count} scan result(s) were hidden by ignore rules."
+                )
+                QMessageBox.information(
+                    self,
+                    "Scan Services",
+                    f"No visible scan results remain. {ignored_count} result(s) were hidden by ignore rules.",
+                )
+            else:
+                self.scan_status_label.setText("Scan status: no listening services or processes were detected.")
+                QMessageBox.information(self, "Scan Services", "No listening services or processes were detected.")
+            return
+
+        hidden_suffix = f"; {ignored_count} hidden by ignore rules" if ignored_count else ""
+        self.scan_status_label.setText(
+            f"Scan status: found {len(visible_results)} visible listening service(s) or process(es){hidden_suffix}."
+        )
+        dialog = DiscoveryDialog(
+            self.registry.config_dir,
+            visible_results,
+            self.controller.suggested_config,
+            self._ignore_discovered_app,
+            self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted or dialog.selected_config is None:
+            self.scan_status_label.setText(
+                f"Scan status: found {len(visible_results)} visible result(s){hidden_suffix}; import canceled before saving a config."
+            )
+            return
+
+        config = dialog.selected_config
+        if self.registry.get(config.id) is not None:
+            overwrite = QMessageBox.question(
+                self,
+                "Overwrite Config",
+                f"A config with ID '{config.id}' already exists. Overwrite it?",
+            )
+            if overwrite != QMessageBox.StandardButton.Yes:
+                self.scan_status_label.setText(
+                    f"Scan status: found {len(visible_results)} visible result(s){hidden_suffix}; overwrite declined for '{config.id}'."
+                )
+                return
+
+        path = self.registry.save(config)
+        self.scan_status_label.setText(f"Scan status: saved imported config to {path.name}.")
+        QMessageBox.information(
+            self,
+            "Config Saved",
+            f"Saved config to {path}\nReview repo, entry target, and WinSW values before managing the app.",
+        )
+        self.reload_apps(show_errors=False)
+
+    def _on_scan_failed(self, message: str) -> None:
+        self.scan_status_label.setText(f"Scan status: failed - {message}")
+        self._show_error("Scan Failed", message)
+
+    def _cleanup_scan(self) -> None:
+        if self._scan_progress is not None:
+            self._scan_progress.close()
+            self._scan_progress.deleteLater()
+            self._scan_progress = None
+        if self._scan_worker is not None:
+            self._scan_worker.deleteLater()
+            self._scan_worker = None
+        if self._scan_thread is not None:
+            self._scan_thread.deleteLater()
+            self._scan_thread = None
+        self.scan_button.setEnabled(True)
+
+    def _save_and_reload_manager_config(self, manager_config: ManagerConfig) -> None:
+        try:
+            self.installation_manager.ensure_layout(manager_config)
+            self.installation_manager.save(manager_config)
+        except OSError as exc:
+            self._show_error("Settings Error", str(exc))
+            return
+
+        self.manager_config = manager_config
+        self.registry = AppRegistry(manager_config.apps_dir)
+        self.controller = self._controller_factory(manager_config)
+        self.scan_status_label.setText(f"Scan status: manager settings reloaded from {self.manager_config_path.name}.")
+        self.reload_apps(show_errors=True)
+
+    def _ignore_discovered_app(self, app) -> bool:
+        rule = ScanIgnoreRule.from_discovered_app(app)
+        if any(existing == rule for existing in self.manager_config.scan_ignore_rules):
+            self.scan_status_label.setText(f"Scan status: ignore rule already exists for {rule.label}.")
+            return True
+
+        updated_config = ManagerConfig(
+            apps_dir=self.manager_config.apps_dir,
+            install_dir=self.manager_config.install_dir,
+            runtime_dir=self.manager_config.runtime_dir,
+            tools_dir=self.manager_config.tools_dir,
+            logs_dir=self.manager_config.logs_dir,
+            winsw_exe_path=self.manager_config.winsw_exe_path,
+            scan_ignore_rules=(*self.manager_config.scan_ignore_rules, rule),
+            initialized=self.manager_config.initialized,
+        )
+        try:
+            self.installation_manager.save(updated_config)
+        except OSError as exc:
+            self._show_error("Ignore Failed", str(exc))
+            return False
+
+        self.manager_config = updated_config
+        self.scan_status_label.setText(f"Scan status: added ignore rule for {rule.label}.")
+        return True
+
+    def _uninstall_managed_assets(self, manager_config: ManagerConfig) -> None:
+        try:
+            self.installation_manager.uninstall_managed_assets(manager_config)
+            self.installation_manager.save(manager_config)
+        except (OSError, ValueError) as exc:
+            self._show_error("Uninstall Failed", str(exc))
+            return
+
+        QMessageBox.information(
+            self,
+            "Managed Assets Removed",
+            "The managed python-webapp-manager root was removed. The app will close so setup can run again on next start.",
+        )
+        self.close()
+
     def _render_current_app(self, index: int) -> None:
         while self.detail_layout.rowCount():
             self.detail_layout.removeRow(0)
@@ -349,6 +561,8 @@ class MainWindow(QMainWindow):
                 self.open_logs_button,
             ):
                 button.setEnabled(False)
+            self.scan_button.setEnabled(self._scan_thread is None)
+            self.settings_button.setEnabled(True)
             return
 
         dev_supported = config.mode in {"dev", "both"}
@@ -366,6 +580,8 @@ class MainWindow(QMainWindow):
         self.health_button.setEnabled(True)
         self.update_button.setEnabled(True)
         self.open_logs_button.setEnabled(True)
+        self.scan_button.setEnabled(self._scan_thread is None)
+        self.settings_button.setEnabled(True)
 
     def _item_text(self, config: AppConfig, snapshot: AppSnapshot) -> str:
         last_action = snapshot.last_action.name if snapshot.last_action else "-"

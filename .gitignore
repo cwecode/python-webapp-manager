@@ -44,3 +44,5 @@ AGENTS.md
 
 configs/apps/*.json
 !configs/apps/*.example.json
+configs/manager.json
+!configs/manager.json.example
