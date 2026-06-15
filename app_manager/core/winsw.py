@@ -3,12 +3,56 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import urllib.request
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from app_manager.models.manager import recommended_winsw_filename
 
 ShellRunner = Callable[[str], str]
+LATEST_RELEASE_API = "https://api.github.com/repos/winsw/winsw/releases/latest"
+
+
+class UrlOpener(Protocol):
+    def __call__(self, url: str, timeout: float = 30.0) -> Any:
+        ...
+
+
+def download_winsw(target_path: Path, opener: UrlOpener = urllib.request.urlopen) -> Path:
+    release = _load_latest_release(opener)
+    asset_name = recommended_winsw_filename()
+    download_url = _find_asset_download_url(release, asset_name)
+    if download_url is None:
+        raise OSError(f"WinSW release asset not found: {asset_name}")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with opener(download_url, timeout=120.0) as response:
+        payload = response.read()
+    if not payload:
+        raise OSError("downloaded WinSW file is empty")
+    target_path.write_bytes(payload)
+    return target_path.resolve()
+
+
+def _load_latest_release(opener: UrlOpener) -> dict[str, Any]:
+    with opener(LATEST_RELEASE_API, timeout=30.0) as response:
+        payload = response.read()
+    loaded = json.loads(payload.decode("utf-8"))
+    if not isinstance(loaded, dict):
+        raise OSError("unexpected WinSW release response")
+    return loaded
+
+
+def _find_asset_download_url(release: dict[str, Any], asset_name: str) -> str | None:
+    assets = release.get("assets", [])
+    if not isinstance(assets, list):
+        return None
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        if asset.get("name") == asset_name and isinstance(asset.get("browser_download_url"), str):
+            return asset["browser_download_url"]
+    return None
 
 
 class WinSWDetector:

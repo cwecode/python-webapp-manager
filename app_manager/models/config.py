@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-AppMode = Literal["dev", "prod", "both"]
+AppMode = Literal["dev", "prod", "both", "observed"]
 EntryKind = Literal["waitress", "uvicorn"]
 
 
@@ -64,8 +64,8 @@ class AppConfig:
             raise ConfigValidationError(errors)
 
         mode = payload["mode"]
-        if mode not in {"dev", "prod", "both"}:
-            errors.append("mode must be one of: dev, prod, both")
+        if mode not in {"dev", "prod", "both", "observed"}:
+            errors.append("mode must be one of: dev, prod, both, observed")
 
         entry_kind = payload["entry_kind"]
         if entry_kind not in {"waitress", "uvicorn"}:

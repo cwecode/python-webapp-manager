@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app_manager.core.winsw import WinSWDetector
+from app_manager.core.winsw import WinSWDetector, download_winsw
 from app_manager.models import ConfigValidationError, ManagerConfig
 from app_manager.models.manager import recommended_winsw_filename
 
@@ -40,6 +40,21 @@ class WinSWDetectWorker(QObject):
             self.failed.emit(str(exc))
 
 
+class WinSWDownloadWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, target_path: Path) -> None:
+        super().__init__()
+        self.target_path = target_path
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(download_winsw(self.target_path))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class ManagerSettingsDialog(QDialog):
     def __init__(
         self,
@@ -56,24 +71,23 @@ class ManagerSettingsDialog(QDialog):
         self._selected_config: ManagerConfig | None = None
         self._request_uninstall = False
         self._winsw_detector = winsw_detector or WinSWDetector()
+        self._base_config = manager_config
         self._detect_thread: QThread | None = None
         self._detect_worker: WinSWDetectWorker | None = None
+        self._download_thread: QThread | None = None
+        self._download_worker: WinSWDownloadWorker | None = None
         self._detected_winsw_paths: list[Path] = []
+        self._close_requested = False
 
         self.setWindowTitle("Initial Setup" if setup_mode else "Settings")
         self.resize(840, 420)
 
         root_layout = QVBoxLayout(self)
-        intro = QLabel(
-            "python-webapp-manager is a Windows-only tool. Choose one root directory and the app will keep everything "
-            "under it: app configs, runtime state, tools, and logs."
-        )
+        intro = QLabel("Choose one manager root. App configs, runtime files, tools, and logs stay below it.")
         intro.setWordWrap(True)
         root_layout.addWidget(intro)
 
-        platform_hint = QLabel(
-            f"Detected machine: {platform.machine() or 'unknown'}. Recommended WinSW binary: {recommended_winsw_filename()}."
-        )
+        platform_hint = QLabel(f"Machine: {platform.machine() or 'unknown'} | WinSW: {recommended_winsw_filename()}")
         platform_hint.setWordWrap(True)
         root_layout.addWidget(platform_hint)
 
@@ -91,7 +105,7 @@ class ManagerSettingsDialog(QDialog):
         winsw_title = QLabel("WinSW")
         root_layout.addWidget(winsw_title)
 
-        self.winsw_status_label = QLabel("Checking for an existing WinSW installation...")
+        self.winsw_status_label = QLabel("Checking for WinSW...")
         self.winsw_status_label.setWordWrap(True)
         root_layout.addWidget(self.winsw_status_label)
 
@@ -109,6 +123,9 @@ class ManagerSettingsDialog(QDialog):
         self.use_detected_button.clicked.connect(self._use_detected_winsw)
         self.use_detected_button.setEnabled(False)
         winsw_actions_layout.addWidget(self.use_detected_button)
+        self.download_winsw_button = QPushButton("Download WinSW")
+        self.download_winsw_button.clicked.connect(self._start_winsw_download)
+        winsw_actions_layout.addWidget(self.download_winsw_button)
         winsw_actions_layout.addStretch(1)
         root_layout.addWidget(winsw_actions)
 
@@ -151,9 +168,12 @@ class ManagerSettingsDialog(QDialog):
         return self._request_uninstall
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
-        if self._detect_thread is not None:
-            self._detect_thread.quit()
-            self._detect_thread.wait(2000)
+        if self._background_running():
+            self._close_requested = True
+            self.setEnabled(False)
+            self.winsw_status_label.setText("Waiting for the current WinSW background task to finish before closing...")
+            event.ignore()
+            return
         super().closeEvent(event)
 
     def _save(self) -> None:
@@ -232,7 +252,7 @@ class ManagerSettingsDialog(QDialog):
     def _refresh_structure_preview(self) -> None:
         install_dir = Path(self.install_dir_input.text().strip() or ".")
         self.structure_preview.setText(
-            "This root will contain:\n"
+            "Folders:\n"
             f"{install_dir}\\apps\n"
             f"{install_dir}\\runtime\n"
             f"{install_dir}\\tools\n"
@@ -251,12 +271,13 @@ class ManagerSettingsDialog(QDialog):
         self._refresh_structure_preview()
 
     def _start_winsw_detection(self) -> None:
-        if self._detect_thread is not None:
+        if self._detect_thread is not None or self._download_thread is not None:
             return
 
         self.winsw_status_label.setText("Checking for an existing WinSW installation...")
         self.winsw_progress.setVisible(True)
         self.search_again_button.setEnabled(False)
+        self.download_winsw_button.setEnabled(False)
         self.use_detected_button.setEnabled(False)
         self._detected_winsw_paths = []
 
@@ -275,31 +296,32 @@ class ManagerSettingsDialog(QDialog):
         self._detected_winsw_paths = [path for path in paths if isinstance(path, Path)] if isinstance(paths, list) else []
         if not self._detected_winsw_paths:
             self.winsw_status_label.setText(
-                "No existing WinSW installation was found in common Windows locations. "
-                "The managed default under the selected root will be used unless you browse to an existing .exe."
+            "No WinSW found. Use the managed default, download it, or browse to an existing .exe."
             )
             return
 
         first_path = self._detected_winsw_paths[0]
         self.winsw_status_label.setText(
-            f"Found {len(self._detected_winsw_paths)} WinSW candidate(s). Suggested path: {first_path}"
+            f"Found {len(self._detected_winsw_paths)} WinSW candidate(s). Suggested: {first_path}"
         )
         self.use_detected_button.setEnabled(True)
 
     def _on_winsw_detection_failed(self, message: str) -> None:
         self.winsw_status_label.setText(
-            f"WinSW detection failed: {message}. You can still continue with the managed default or browse manually."
+            f"WinSW search failed: {message}. You can still use the managed default or browse manually."
         )
 
     def _cleanup_detection(self) -> None:
         self.winsw_progress.setVisible(False)
         self.search_again_button.setEnabled(True)
+        self.download_winsw_button.setEnabled(True)
         if self._detect_worker is not None:
             self._detect_worker.deleteLater()
             self._detect_worker = None
         if self._detect_thread is not None:
             self._detect_thread.deleteLater()
             self._detect_thread = None
+        self._finish_pending_close()
 
     def _use_detected_winsw(self) -> None:
         if not self._detected_winsw_paths:
@@ -307,3 +329,59 @@ class ManagerSettingsDialog(QDialog):
         self.existing_winsw_input.setText(str(self._detected_winsw_paths[0]))
         self.use_existing_winsw_checkbox.setChecked(True)
         self._refresh_structure_preview()
+
+    def _start_winsw_download(self) -> None:
+        if self._download_thread is not None or self._detect_thread is not None:
+            return
+
+        target_path = Path(self.install_dir_input.text().strip() or ".") / "tools" / recommended_winsw_filename()
+        self.winsw_status_label.setText(f"Downloading WinSW to {target_path}...")
+        self.winsw_progress.setVisible(True)
+        self.search_again_button.setEnabled(False)
+        self.download_winsw_button.setEnabled(False)
+        self.use_detected_button.setEnabled(False)
+
+        self._download_thread = QThread(self)
+        self._download_worker = WinSWDownloadWorker(target_path)
+        self._download_worker.moveToThread(self._download_thread)
+        self._download_thread.started.connect(self._download_worker.run)
+        self._download_worker.finished.connect(self._on_winsw_downloaded)
+        self._download_worker.failed.connect(self._on_winsw_download_failed)
+        self._download_worker.finished.connect(self._download_thread.quit)
+        self._download_worker.failed.connect(self._download_thread.quit)
+        self._download_thread.finished.connect(self._cleanup_download)
+        self._download_thread.start()
+
+    def _on_winsw_downloaded(self, path: object) -> None:
+        if not isinstance(path, Path):
+            self.winsw_status_label.setText("WinSW download finished, but returned no usable path.")
+            return
+        self.use_existing_winsw_checkbox.setChecked(False)
+        self.existing_winsw_input.setText(str(path))
+        self.winsw_status_label.setText(f"Downloaded managed WinSW: {path}")
+        self._refresh_structure_preview()
+
+    def _on_winsw_download_failed(self, message: str) -> None:
+        self.winsw_status_label.setText(
+            f"WinSW download failed: {message}. Retry, browse manually, or continue without service actions."
+        )
+
+    def _cleanup_download(self) -> None:
+        self.winsw_progress.setVisible(False)
+        self.search_again_button.setEnabled(True)
+        self.download_winsw_button.setEnabled(True)
+        if self._download_worker is not None:
+            self._download_worker.deleteLater()
+            self._download_worker = None
+        if self._download_thread is not None:
+            self._download_thread.deleteLater()
+            self._download_thread = None
+        self._finish_pending_close()
+
+    def _background_running(self) -> bool:
+        return self._detect_thread is not None or self._download_thread is not None
+
+    def _finish_pending_close(self) -> None:
+        if not self._close_requested or self._background_running():
+            return
+        self.close()

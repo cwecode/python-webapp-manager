@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app_manager.core.config_checks import validate_app_config
 from app_manager.models import AppConfig, ConfigValidationError, DiscoveredApp
 
 
@@ -42,17 +43,14 @@ class DiscoveryDialog(QDialog):
         self._suggest_config = suggest_config
         self._ignore_callback = ignore_callback
         self._selected_config: AppConfig | None = None
+        self._selected_discovered_app: DiscoveredApp | None = None
         self._field_widgets: dict[str, object] = {}
 
         self.setWindowTitle("Scan Local Services")
         self.resize(1100, 720)
 
         root_layout = QVBoxLayout(self)
-        intro = QLabel(
-            "Review detected listeners and adjust the generated config before saving. "
-            "Detected ports and process details are reliable; repo paths and entry targets may need manual correction. "
-            "Prod mode is only preselected for WinSW-backed services."
-        )
+        intro = QLabel("Pick a listener, review the generated config, then save or ignore it.")
         intro.setWordWrap(True)
         root_layout.addWidget(intro)
 
@@ -83,6 +81,10 @@ class DiscoveryDialog(QDialog):
         self.detected_label.setWordWrap(True)
         right_layout.addWidget(self.detected_label)
 
+        self.attach_process_checkbox = QCheckBox("Attach this running process")
+        self.attach_process_checkbox.setToolTip("Stores the current PID so Stop Dev can stop it once.")
+        right_layout.addWidget(self.attach_process_checkbox)
+
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_container = QWidget()
@@ -91,6 +93,7 @@ class DiscoveryDialog(QDialog):
         right_layout.addWidget(scroll_area, 1)
 
         self._build_form()
+        self._combo_box("mode").currentTextChanged.connect(self._sync_attach_checkbox)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         ignore_button = buttons.addButton("Ignore Selected", QDialogButtonBox.ActionRole)
@@ -111,6 +114,14 @@ class DiscoveryDialog(QDialog):
     def selected_config(self) -> AppConfig | None:
         return self._selected_config
 
+    @property
+    def selected_discovered_app(self) -> DiscoveredApp | None:
+        return self._selected_discovered_app
+
+    @property
+    def attach_current_process(self) -> bool:
+        return self.attach_process_checkbox.isChecked()
+
     def set_suggested_payload(self, payload: dict[str, Any]) -> None:
         self._line_edit("id").setText(str(payload["id"]))
         self._line_edit("display_name").setText(str(payload["display_name"]))
@@ -120,7 +131,7 @@ class DiscoveryDialog(QDialog):
         self._line_edit("python_path").setText(str(payload["python_path"]))
         self._line_edit("venv_path").setText(str(payload["venv_path"]))
         self._combo_box("entry_kind").setCurrentText(str(payload["entry_kind"]))
-        self._line_edit("entry_target").setText(str(payload["entry_target"]))
+        self._combo_box("entry_target").setCurrentText(str(payload["entry_target"]))
         self._line_edit("host").setText(str(payload["host"]))
         self._spin_box("port").setValue(int(payload["port"]))
         self._line_edit("health_url").setText("" if payload["health_url"] is None else str(payload["health_url"]))
@@ -137,13 +148,14 @@ class DiscoveryDialog(QDialog):
     def _build_form(self) -> None:
         self._add_line("id", "ID")
         self._add_line("display_name", "Display name")
-        self._add_combo("mode", "Mode", ["dev", "prod", "both"])
+        self._add_combo("mode", "Mode", ["dev", "prod", "both", "observed"])
         self._add_line("repo_path", "Repo path")
         self._add_line("branch", "Branch")
         self._add_line("python_path", "Python path")
         self._add_line("venv_path", "Venv path")
         self._add_combo("entry_kind", "Entry kind", ["uvicorn", "waitress"])
-        self._add_line("entry_target", "Entry target")
+        self._combo_box("entry_kind").currentTextChanged.connect(self._sync_entry_target_options)
+        self._add_editable_combo("entry_target", "Entry target", _entry_target_options("uvicorn"))
         self._add_line("host", "Host")
         self._add_spin("port", "Port", 1, 65535)
         self._add_line("health_url", "Health URL")
@@ -192,12 +204,13 @@ class DiscoveryDialog(QDialog):
         if not isinstance(app, DiscoveredApp):
             return
 
+        self._selected_discovered_app = app
         self.detected_label.setText(
-            f"Detected {app.display_name} | pid={app.pid} | process={app.process_name} | "
-            f"bind={app.local_address}:{app.port} | service={app.service_name or '-'} | "
-            f"exe={app.executable_path or '-'}"
+            f"{app.display_name} | PID {app.pid} | {app.process_name} | "
+            f"{app.local_address}:{app.port} | service={app.service_name or '-'}"
         )
         self.set_suggested_payload(self._suggest_config(app))
+        self._sync_attach_checkbox()
 
     def _save(self) -> None:
         payload = {
@@ -209,7 +222,7 @@ class DiscoveryDialog(QDialog):
             "python_path": self._line_edit("python_path").text().strip(),
             "venv_path": self._line_edit("venv_path").text().strip(),
             "entry_kind": self._combo_box("entry_kind").currentText(),
-            "entry_target": self._line_edit("entry_target").text().strip(),
+            "entry_target": self._combo_box("entry_target").currentText().strip(),
             "host": self._line_edit("host").text().strip(),
             "port": self._spin_box("port").value(),
             "health_url": _empty_to_none(self._line_edit("health_url").text()),
@@ -222,14 +235,29 @@ class DiscoveryDialog(QDialog):
             "autostart_prod": self._check_box("autostart_prod").isChecked(),
         }
         try:
-            self._selected_config = AppConfig.from_dict(payload, base_dir=self._config_base_dir)
+            config = AppConfig.from_dict(payload, base_dir=self._config_base_dir)
         except ConfigValidationError as exc:
             QMessageBox.critical(self, "Invalid Config", "\n".join(exc.errors))
             return
+        result = validate_app_config(config)
+        if result.errors:
+            QMessageBox.critical(self, "Validation Failed", "\n".join(result.errors))
+            return
+        if result.warnings:
+            answer = QMessageBox.question(
+                self,
+                "Validation Warnings",
+                "Review before saving:\n\n"
+                + "\n".join(result.warnings)
+                + "\n\nSave anyway?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self._selected_config = config
         self.accept()
 
     def _ignore_selected(self) -> None:
-        app = self._selected_discovered_app()
+        app = self._current_discovered_app()
         if app is None:
             QMessageBox.information(self, "Ignore Scan Result", "Select a scan result first.")
             return
@@ -255,6 +283,13 @@ class DiscoveryDialog(QDialog):
 
     def _add_combo(self, field_name: str, label: str, values: list[str]) -> None:
         widget = QComboBox()
+        widget.addItems(values)
+        self._field_widgets[field_name] = widget
+        self.form_layout.addRow(QLabel(label), widget)
+
+    def _add_editable_combo(self, field_name: str, label: str, values: list[str]) -> None:
+        widget = QComboBox()
+        widget.setEditable(True)
         widget.addItems(values)
         self._field_widgets[field_name] = widget
         self.form_layout.addRow(QLabel(label), widget)
@@ -287,7 +322,7 @@ class DiscoveryDialog(QDialog):
     def _check_box(self, field_name: str) -> QCheckBox:
         return self._field_widgets[field_name]  # type: ignore[return-value]
 
-    def _selected_discovered_app(self) -> DiscoveredApp | None:
+    def _current_discovered_app(self) -> DiscoveredApp | None:
         current_row = self.result_table.currentRow()
         if current_row < 0:
             return None
@@ -299,7 +334,30 @@ class DiscoveryDialog(QDialog):
             return None
         return app
 
+    def _sync_attach_checkbox(self) -> None:
+        app = self._selected_discovered_app
+        mode = self._combo_box("mode").currentText()
+        can_attach = app is not None and app.service_name is None and mode in {"dev", "both"}
+        self.attach_process_checkbox.setEnabled(can_attach)
+        self.attach_process_checkbox.setChecked(can_attach)
+
+    def _sync_entry_target_options(self) -> None:
+        widget = self._combo_box("entry_target")
+        current_text = widget.currentText().strip()
+        options = _entry_target_options(self._combo_box("entry_kind").currentText())
+        widget.blockSignals(True)
+        widget.clear()
+        widget.addItems(options)
+        widget.setCurrentText(current_text or options[0])
+        widget.blockSignals(False)
+
 
 def _empty_to_none(value: str) -> str | None:
     stripped = value.strip()
     return stripped or None
+
+
+def _entry_target_options(entry_kind: str) -> list[str]:
+    if entry_kind == "waitress":
+        return ["wsgi:app", "app:app", "main:app", "server:app", "run:app"]
+    return ["main:app", "app:app", "api:app", "app.main:app", "src.main:app"]

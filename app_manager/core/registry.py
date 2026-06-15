@@ -24,9 +24,12 @@ class AppRegistry:
         except ConfigValidationError as exc:
             raise ConfigValidationError([f"{path.name}: {error}" for error in exc.errors]) from exc
 
-    def save(self, config: AppConfig) -> Path:
+    def save(self, config: AppConfig, previous_id: str | None = None) -> Path:
         path = self.config_dir / f"{config.id}.json"
         path.write_text(json.dumps(config.to_dict(), indent=2), encoding="utf-8")
+        if previous_id and previous_id != config.id:
+            old_path = self.config_dir / f"{previous_id}.json"
+            old_path.unlink(missing_ok=True)
         return path
 
     def get(self, app_id: str) -> AppConfig | None:
@@ -34,3 +37,6 @@ class AppRegistry:
         if not path.exists():
             return None
         return self.load_file(path)
+
+    def path_for(self, app_id: str) -> Path:
+        return self.config_dir / f"{app_id}.json"

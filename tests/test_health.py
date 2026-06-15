@@ -69,3 +69,19 @@ def test_health_unhealthy_http_error(monkeypatch) -> None:
 
     assert status == "unhealthy"
     assert detail == "HTTP 503"
+
+
+def test_health_assumes_http_when_scheme_is_missing(monkeypatch) -> None:
+    checker = HealthChecker()
+    captured_urls: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        captured_urls.append(request.full_url)
+        return _Response(200)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    status, detail = checker.check("127.0.0.1:8000/health")
+
+    assert status == "healthy"
+    assert detail == "HTTP 200"
+    assert captured_urls == ["http://127.0.0.1:8000/health"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 
 from app_manager.core.discovery import WindowsAppDiscovery
@@ -29,6 +30,9 @@ class AppController:
         self.runtime_store = RuntimeStore(process_runner.runtime_root)
 
     def snapshot(self, config: AppConfig) -> AppSnapshot:
+        if config.mode == "observed":
+            return self._observed_snapshot(config)
+
         dev_status, dev_detail = self._dev_status(config)
         prod_status, prod_detail = self._prod_status(config)
         status, detail, active_mode = self._resolve_runtime_status(config, dev_status, dev_detail, prod_status, prod_detail)
@@ -41,6 +45,7 @@ class AppController:
             detail = f"{detail}; config warnings: {'; '.join(issues)}"
 
         health, health_detail = self.health_checker.check(config.health_url)
+        git_state, git_detail = self._git_status(config)
         return AppSnapshot(
             status=status,
             status_detail=detail,
@@ -48,6 +53,9 @@ class AppController:
             health_detail=health_detail,
             active_mode=active_mode,
             last_action=self.runtime_store.read_last_action(config),
+            git_state=git_state,
+            git_detail=git_detail,
+            runtime_started_at=self._runtime_started_at(config, active_mode),
         )
 
     def start_dev(self, config: AppConfig) -> ActionResult:
@@ -88,6 +96,9 @@ class AppController:
         return self._record(config, "open_logs", ActionResult(True, f"opened logs: {config.log_dir}"))
 
     def update_app(self, config: AppConfig) -> ActionResult:
+        if config.mode == "observed":
+            return self._record(config, "update_app", ActionResult(False, "observed apps cannot be updated"))
+
         snapshot = self.snapshot(config)
         if snapshot.active_mode == "dev":
             stop_result = self.process_runner.stop_dev(config)
@@ -121,17 +132,21 @@ class AppController:
     def suggested_config(self, app: DiscoveredApp) -> dict[str, object]:
         return self.discovery.suggest_config(app)
 
+    def attach_discovered_process(self, config: AppConfig, app: DiscoveredApp) -> ActionResult:
+        command = [str(app.executable_path)] if app.executable_path is not None else [app.process_name]
+        return self._record(config, "attach_discovered_process", self.process_runner.attach_dev_process(config, app.pid, command))
+
     def _record(self, config: AppConfig, action_name: str, result: ActionResult) -> ActionResult:
         self.runtime_store.write_last_action(config, action_name, result)
         return result
 
     def _dev_status(self, config: AppConfig) -> tuple[RuntimeStatus, str]:
-        if config.mode == "prod":
+        if config.mode in {"prod", "observed"}:
             return "unknown", "dev mode disabled"
         return self.process_runner.get_status(config)
 
     def _prod_status(self, config: AppConfig) -> tuple[RuntimeStatus, str]:
-        if config.mode == "dev":
+        if config.mode in {"dev", "observed"}:
             return "unknown", "prod mode disabled"
         return self.service_runner.get_status(config)
 
@@ -164,6 +179,9 @@ class AppController:
         return prod_status if prod_status != "unknown" else dev_status, prod_detail if prod_detail else dev_detail, "none"
 
     def _config_issues(self, config: AppConfig) -> list[str]:
+        if config.mode == "observed":
+            return []
+
         issues: list[str] = []
         issues.extend(self._path_issue(config.repo_path, "repo_path"))
         issues.extend(self._path_issue(config.python_path, "python_path"))
@@ -180,3 +198,47 @@ class AppController:
         if path.exists():
             return []
         return [f"{field_name} not found: {path}"]
+
+    def _observed_snapshot(self, config: AppConfig) -> AppSnapshot:
+        health, health_detail = self.health_checker.check(config.health_url)
+        if health == "healthy":
+            status: RuntimeStatus = "running"
+            detail = health_detail
+        elif self._port_open(config.host, config.port):
+            status = "running"
+            detail = f"port is listening: {config.host}:{config.port}"
+        else:
+            status = "stopped"
+            detail = f"port is not listening: {config.host}:{config.port}"
+
+        return AppSnapshot(
+            status=status,
+            status_detail=detail,
+            health=health,
+            health_detail=health_detail,
+            active_mode="none",
+            last_action=self.runtime_store.read_last_action(config),
+            git_state="disabled",
+            git_detail="observed app",
+            runtime_started_at=None,
+        )
+
+    def _port_open(self, host: str, port: int) -> bool:
+        check_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.5)
+                return sock.connect_ex((check_host, port)) == 0
+        except OSError:
+            return False
+
+    def _git_status(self, config: AppConfig) -> tuple[str, str]:
+        checker = getattr(self.updater, "check_status", None)
+        if checker is None:
+            return "unknown", "git status checker unavailable"
+        return checker(config)
+
+    def _runtime_started_at(self, config: AppConfig, active_mode: str) -> str | None:
+        if active_mode == "dev":
+            return self.runtime_store.read_dev_started_at(config)
+        return None

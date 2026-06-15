@@ -157,3 +157,19 @@ def test_update_app_keeps_stopped_runtime_stopped(tmp_path: Path) -> None:
     assert process_runner.calls == ["get_status"]
     assert service_runner.calls == ["get_status"]
     assert updater.calls == ["update"]
+
+
+def test_snapshot_includes_dev_runtime_started_at(tmp_path: Path) -> None:
+    config = _make_config(tmp_path, mode="dev")
+    runtime_root = tmp_path / "runtime"
+    state_dir = runtime_root / config.id
+    state_dir.mkdir(parents=True)
+    started_at = "2026-06-15T08:30:00+00:00"
+    (state_dir / "dev_state.json").write_text(json.dumps({"pid": 1234, "started_at": started_at}), encoding="utf-8")
+    process_runner = _FakeProcessRunner(runtime_root, ("running", "PID 1234"))
+    service_runner = _FakeServiceRunner(("unknown", "prod mode disabled"))
+    controller = AppController(process_runner, service_runner, _FakeUpdater(), _FakeHealthChecker())
+
+    snapshot = controller.snapshot(config)
+
+    assert snapshot.runtime_started_at == started_at

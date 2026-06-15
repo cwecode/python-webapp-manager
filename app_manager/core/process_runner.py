@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app_manager.core.runtime_store import RuntimeStore
+from app_manager.core.subprocess_utils import run_capture
 from app_manager.models.config import AppConfig
 from app_manager.models.runtime import ActionResult, RuntimeStatus
 
@@ -19,6 +20,8 @@ class ProcessRunner:
     def start_dev(self, config: AppConfig) -> ActionResult:
         if config.mode == "prod":
             return ActionResult(False, "app does not support dev mode")
+        if config.mode == "observed":
+            return ActionResult(False, "observed apps cannot be started")
 
         state_path = self.store.dev_state_path(config)
         if state_path.exists():
@@ -53,6 +56,25 @@ class ProcessRunner:
         state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
         return ActionResult(True, f"started PID {process.pid}")
 
+    def attach_dev_process(self, config: AppConfig, pid: int, command: list[str] | None = None) -> ActionResult:
+        if config.mode in {"prod", "observed"}:
+            return ActionResult(False, "app does not support dev mode")
+        if pid <= 0:
+            return ActionResult(False, "PID must be a positive integer")
+        if not self._pid_running(pid):
+            return ActionResult(False, f"PID {pid} is not running")
+
+        runtime_dir = self.store.app_dir(config)
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        state = {
+            "pid": pid,
+            "command": command or [],
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "attached": True,
+        }
+        self.store.dev_state_path(config).write_text(json.dumps(state, indent=2), encoding="utf-8")
+        return ActionResult(True, f"attached running PID {pid}")
+
     def stop_dev(self, config: AppConfig) -> ActionResult:
         state_path = self.store.dev_state_path(config)
         if not state_path.exists():
@@ -64,18 +86,12 @@ class ProcessRunner:
             state_path.unlink(missing_ok=True)
             return ActionResult(True, f"PID {pid} already stopped")
 
-        graceful = subprocess.run(
+        graceful = run_capture(
             ["taskkill", "/PID", str(pid), "/T"],
-            capture_output=True,
-            text=True,
-            check=False,
         )
         if graceful.returncode != 0 and self._pid_running(pid):
-            forced = subprocess.run(
+            forced = run_capture(
                 ["taskkill", "/F", "/PID", str(pid), "/T"],
-                capture_output=True,
-                text=True,
-                check=False,
             )
             if forced.returncode != 0:
                 return ActionResult(False, forced.stderr.strip() or forced.stdout.strip() or "failed to stop process")
@@ -90,6 +106,9 @@ class ProcessRunner:
         return self.start_dev(config)
 
     def get_status(self, config: AppConfig) -> tuple[RuntimeStatus, str]:
+        if config.mode == "observed":
+            return "unknown", "observed apps are not process-managed"
+
         state_path = self.store.dev_state_path(config)
         if not state_path.exists():
             return "stopped", "no dev process tracked"
@@ -97,6 +116,8 @@ class ProcessRunner:
         state = self._read_state(state_path)
         pid = state["pid"]
         if self._pid_running(pid):
+            if state.get("attached"):
+                return "running", f"attached PID {pid}"
             return "running", f"PID {pid}"
 
         return "error", f"state file exists but PID {pid} is not running"
@@ -146,10 +167,7 @@ class ProcessRunner:
         return json.loads(state_path.read_text(encoding="utf-8"))
 
     def _pid_running(self, pid: int) -> bool:
-        result = subprocess.run(
+        result = run_capture(
             ["tasklist", "/FI", f"PID eq {pid}"],
-            capture_output=True,
-            text=True,
-            check=False,
         )
         return result.returncode == 0 and str(pid) in result.stdout

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import ctypes
-import subprocess
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from app_manager.core.runtime_store import RuntimeStore
+from app_manager.core.subprocess_utils import run_capture
 from app_manager.models.config import AppConfig
 from app_manager.models.runtime import ActionResult, RuntimeStatus
 
@@ -71,18 +71,17 @@ class ServiceRunner:
     def _run_winsw(self, config: AppConfig, command: str, require_admin: bool = False) -> ActionResult:
         if config.mode == "dev":
             return ActionResult(False, "app does not support prod mode")
+        if config.mode == "observed":
+            return ActionResult(False, "observed apps do not support service actions")
         if require_admin and not self._is_admin():
             return ActionResult(False, "admin rights are required for this action")
         if not config.winsw_exe_path.exists():
             return ActionResult(False, f"WinSW executable not found: {config.winsw_exe_path}")
 
         self.write_xml(config)
-        result = subprocess.run(
+        result = run_capture(
             [str(config.winsw_exe_path), command],
             cwd=self.store.app_dir(config),
-            capture_output=True,
-            text=True,
-            check=False,
         )
         message = result.stdout.strip() or result.stderr.strip() or f"WinSW {command} finished with code {result.returncode}"
         return ActionResult(result.returncode == 0, message)

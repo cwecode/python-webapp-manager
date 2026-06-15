@@ -53,3 +53,70 @@ def test_updater_blocks_dirty_working_tree(monkeypatch, tmp_path: Path) -> None:
     assert result.ok is False
     assert result.message == "working tree is dirty; update aborted"
     assert commands == [["git", "status", "--porcelain"]]
+
+
+def test_check_status_reports_update_available(monkeypatch, tmp_path: Path) -> None:
+    updater = AppUpdater()
+    config = _make_config(tmp_path)
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], cwd: Path) -> ActionResult:
+        commands.append(command)
+        if command[:2] == ["git", "rev-parse"]:
+            return ActionResult(True, "true")
+        if command[:3] == ["git", "status", "--porcelain"]:
+            return ActionResult(True, "")
+        if command[:2] == ["git", "fetch"]:
+            return ActionResult(True, "fetched")
+        if command[:3] == ["git", "rev-list", "--left-right"]:
+            return ActionResult(True, "0\t2")
+        return ActionResult(False, "unexpected command")
+
+    monkeypatch.setattr(updater, "_run", fake_run)
+
+    state, detail = updater.check_status(config)
+
+    assert state == "update_available"
+    assert "2 commit(s) behind origin/main" == detail
+    assert ["git", "fetch", "origin", "main", "--prune"] in commands
+
+
+def test_check_status_reports_dirty_working_tree(monkeypatch, tmp_path: Path) -> None:
+    updater = AppUpdater()
+    config = _make_config(tmp_path)
+
+    def fake_run(command: list[str], cwd: Path) -> ActionResult:
+        if command[:2] == ["git", "rev-parse"]:
+            return ActionResult(True, "true")
+        if command[:3] == ["git", "status", "--porcelain"]:
+            return ActionResult(True, " M app.py")
+        return ActionResult(False, "unexpected command")
+
+    monkeypatch.setattr(updater, "_run", fake_run)
+
+    assert updater.check_status(config) == ("dirty", "working tree has local changes")
+
+
+def test_check_status_caches_remote_fetch(monkeypatch, tmp_path: Path) -> None:
+    updater = AppUpdater(fetch_ttl_seconds=300)
+    config = _make_config(tmp_path)
+    fetch_count = 0
+
+    def fake_run(command: list[str], cwd: Path) -> ActionResult:
+        nonlocal fetch_count
+        if command[:2] == ["git", "rev-parse"]:
+            return ActionResult(True, "true")
+        if command[:3] == ["git", "status", "--porcelain"]:
+            return ActionResult(True, "")
+        if command[:2] == ["git", "fetch"]:
+            fetch_count += 1
+            return ActionResult(True, "fetched")
+        if command[:3] == ["git", "rev-list", "--left-right"]:
+            return ActionResult(True, "0\t0")
+        return ActionResult(False, "unexpected command")
+
+    monkeypatch.setattr(updater, "_run", fake_run)
+
+    assert updater.check_status(config)[0] == "current"
+    assert updater.check_status(config)[0] == "current"
+    assert fetch_count == 1

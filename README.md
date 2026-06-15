@@ -13,10 +13,13 @@ Windows-Desktop-Anwendung zum lokalen Verwalten interner Python-Web-Apps in Dev-
 
 Der aktuelle Stand ist ein erster vertikaler Slice:
 
-- JSON-basierte App-Registry mit Validierung
+- Add-App-Wizard mit Validierung
+- JSON-basierte App-Registry
 - Dev-Prozessverwaltung fuer `uvicorn` und `waitress`
+- Observed-Modus fuer externe Prozesse ohne Start/Stop/Update
 - Health-Checks ueber HTTP
 - WinSW-XML-Erzeugung und Service-Command-Wrapper
+- WinSW-Suche und Download aus der App heraus
 - Einfache PySide6-Oberflaeche fuer Laden, Status, Logs und Kernaktionen
 
 ## Start
@@ -58,7 +61,8 @@ Die lokale Maschinenkonfiguration wird als `configs/manager.json` erzeugt und is
 Die App liest Konfigurationen aus `configs/apps/*.json`.
 Fuer ein oeffentliches Repo ist nur das Beispiel `configs/apps/example.app.json.example` versioniert.
 Lokale App-Configs bleiben bewusst unversioniert und muessen als eigene `*.json`-Dateien unter `configs/apps/` angelegt werden.
-Der Modus der verwalteten Apps (`dev`, `prod`, `both`) wird ueber die jeweilige App-Konfiguration gesteuert, nicht ueber `requirements*.txt`.
+Der Modus der Apps (`dev`, `prod`, `both`, `observed`) wird ueber die jeweilige App-Konfiguration gesteuert, nicht ueber `requirements*.txt`.
+Neue Apps werden primaer ueber `Add App` angebunden. `Scan Services` ist als Diagnose- und Uebernahmehilfe gedacht, z. B. fuer blockierte Ports oder laufende Altprozesse.
 
 ## Konfigurationsformat
 
@@ -92,3 +96,4 @@ Optionale Felder:
 - Zielplattform ist Windows.
 - Service-Management setzt WinSW und passende Rechte voraus.
 - Laufzeitdateien, Tools und Logs werden standardmaessig unter `C:\ProgramData\python-webapp-manager\` verwaltet.
+- Eine ausfuehrliche Anleitung zum Anbinden bestehender Apps steht in `docs/CONNECTING_APPS.md`.

@@ -42,3 +42,11 @@ class RuntimeStore:
             return None
         payload = json.loads(path.read_text(encoding="utf-8"))
         return LastAction.from_dict(payload)
+
+    def read_dev_started_at(self, config: AppConfig) -> str | None:
+        path = self.dev_state_path(config)
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        started_at = payload.get("started_at")
+        return started_at if isinstance(started_at, str) and started_at else None

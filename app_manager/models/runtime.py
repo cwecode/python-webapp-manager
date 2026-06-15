@@ -7,6 +7,7 @@ from typing import Any, Literal
 RuntimeStatus = Literal["stopped", "starting", "running", "stopping", "error", "unknown"]
 HealthState = Literal["disabled", "healthy", "unhealthy", "timeout", "error", "unknown"]
 ActiveMode = Literal["dev", "prod", "none", "unknown"]
+GitState = Literal["disabled", "current", "update_available", "dirty", "error", "unknown"]
 
 
 @dataclass
@@ -46,3 +47,6 @@ class AppSnapshot:
     health_detail: str
     active_mode: ActiveMode
     last_action: LastAction | None = None
+    git_state: GitState = "unknown"
+    git_detail: str = "not checked"
+    runtime_started_at: str | None = None

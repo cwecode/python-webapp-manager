@@ -96,3 +96,20 @@ def test_registry_resolves_relative_paths_from_config_dir(tmp_path: Path) -> Non
     assert config.repo_path == (config_dir / ".." / ".." / "repo").resolve()
     assert config.python_path == (config_dir / ".." / ".." / ".venv" / "Scripts" / "python.exe").resolve()
     assert config.log_dir == (config_dir / ".." / ".." / "logs" / "demo").resolve()
+
+
+def test_registry_save_removes_old_file_when_id_changes(tmp_path: Path) -> None:
+    config_dir = tmp_path / "apps"
+    config_dir.mkdir()
+    _write_config(config_dir / "demo.json")
+
+    registry = AppRegistry(config_dir)
+    config = registry.get("demo")
+    assert config is not None
+    config.id = "demo-renamed"
+
+    saved_path = registry.save(config, previous_id="demo")
+
+    assert saved_path == config_dir / "demo-renamed.json"
+    assert saved_path.exists()
+    assert not (config_dir / "demo.json").exists()
