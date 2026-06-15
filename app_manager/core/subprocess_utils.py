@@ -13,15 +13,19 @@ def run_capture(
     shell: bool = False,
     timeout: float | None = None,
 ) -> subprocess.CompletedProcess:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        capture_output=True,
-        text=False,
-        shell=shell,
-        check=False,
-        timeout=timeout,
-    )
+    options = {
+        "cwd": cwd,
+        "capture_output": True,
+        "text": False,
+        "shell": shell,
+        "check": False,
+        "timeout": timeout,
+    }
+    creation_flags = _background_creation_flags()
+    if creation_flags:
+        options["creationflags"] = creation_flags
+
+    result = subprocess.run(command, **options)
     return subprocess.CompletedProcess(
         args=result.args,
         returncode=result.returncode,
@@ -53,3 +57,9 @@ def _candidate_encodings() -> list[str]:
         if normalized and normalized.lower() not in {item.lower() for item in encodings}:
             encodings.append(normalized)
     return encodings or ["utf-8"]
+
+
+def _background_creation_flags() -> int:
+    # GUI apps should not flash console windows for background Git,
+    # PowerShell, taskkill, pip, or WinSW status commands on Windows.
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
