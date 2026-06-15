@@ -22,7 +22,7 @@ After installing Python or Git, close and reopen `cmd.exe` so `python`, `py`, `g
 
 ## Install App Manager From GitHub
 
-Recommended location:
+Recommended application location:
 
 ```text
 C:\Python\App_Manager
@@ -84,6 +84,8 @@ Recommended root:
 C:\ProgramData\python-webapp-manager
 ```
 
+This is intentionally separate from the App Manager Git clone.
+
 App Manager creates this structure below the root:
 
 ```text
@@ -96,15 +98,71 @@ C:\ProgramData\python-webapp-manager\
 
 Local machine configuration is stored in `configs\manager.json` and should not be committed to Git.
 
+## Why Two Directories?
+
+Keep these two concerns separate:
+
+- App Manager application code: `C:\Python\App_Manager`
+- Managed runtime data: `C:\ProgramData\python-webapp-manager`
+
+The application directory contains the Git clone, `.venv`, source code, and the self-update workflow.
+The manager root contains local app configs, runtime state, downloaded tools, and logs.
+
+Do not clone App Manager directly into `C:\ProgramData\python-webapp-manager`.
+That directory is treated as managed runtime data. The Settings dialog can uninstall managed assets from that root, and runtime files should not live inside the App Manager Git repository.
+
+A clean production layout looks like this:
+
+```text
+C:\Python\App_Manager\
+  .git\
+  .venv\
+  app_manager\
+  configs\
+  docs\
+
+C:\ProgramData\python-webapp-manager\
+  apps\
+  runtime\
+  tools\
+  logs\
+```
+
+If you want everything visually grouped, use one parent directory with separate child folders:
+
+```text
+C:\Python\
+  App_Manager\
+  werkstatt_hub\
+  another_web_app\
+
+C:\ProgramData\python-webapp-manager\
+  apps\
+  runtime\
+  tools\
+  logs\
+```
+
 ## Updating App Manager Itself
+
+Inside the app, use:
+
+```text
+Workspace -> Update App Manager
+```
+
+This opens a `cmd.exe` window, updates the App Manager repository, reinstalls the package in `.venv`, and starts App Manager again.
+
+It expects that App Manager was installed from GitHub into a real Git clone and that `.venv\Scripts\python.exe` exists.
+
+The button runs the same workflow as:
 
 Run this in `cmd.exe`:
 
 ```bat
 cd /d C:\Python\App_Manager
 git pull
-.venv\Scripts\activate.bat
-pip install -e .
+".venv\Scripts\python.exe" -m pip install -e .
 app-manager
 ```
 

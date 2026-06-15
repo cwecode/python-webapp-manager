@@ -39,6 +39,8 @@ pip install -e .
 app-manager
 ```
 
+Spaetere Updates des App Managers koennen direkt in der App ueber `Workspace -> Update App Manager` gestartet werden.
+
 ### Entwicklung
 
 ```powershell
@@ -58,6 +60,12 @@ app-manager
 ```
 
 Beim ersten Start fuehrt dich die App durch eine kurze Einrichtung fuer `apps_dir` und den zentralen Installationsordner unter `C:\ProgramData\python-webapp-manager`.
+Das ist absichtlich vom App-Manager-Code unter z. B. `C:\Python\App_Manager` getrennt:
+
+- `C:\Python\App_Manager` enthaelt Git-Clone, `.venv`, Source Code und Self-Update.
+- `C:\ProgramData\python-webapp-manager` enthaelt lokale App-Configs, Runtime-State, Tools und Logs.
+
+Clone den App Manager nicht direkt in den Manager-Root unter `C:\ProgramData\python-webapp-manager`, weil dieser Root als verwalteter Datenbereich behandelt wird.
 Die empfohlene Struktur ist ein einzelner Root-Ordner:
 
 ```text

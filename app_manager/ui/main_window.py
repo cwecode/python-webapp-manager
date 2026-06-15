@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -311,6 +312,11 @@ class MainWindow(QMainWindow):
         self.github_help_button.setToolTip("Explain how App Manager checks local installs against GitHub remotes.")
         self.github_help_button.clicked.connect(self.open_github_help)
         settings_grid.addWidget(self.github_help_button, 2, 0, 1, 3)
+
+        self.self_update_button = QPushButton("Update App Manager")
+        self.self_update_button.setToolTip("Pull the latest App Manager version from GitHub and reinstall it.")
+        self.self_update_button.clicked.connect(self.update_app_manager)
+        settings_grid.addWidget(self.self_update_button, 3, 0, 1, 3)
         _set_button_role(self.open_app_button, "primary")
         _set_button_role(self.start_button, "primary")
         _set_button_role(self.stop_button, "danger")
@@ -329,6 +335,7 @@ class MainWindow(QMainWindow):
             self.scan_button,
             self.settings_button,
             self.github_help_button,
+            self.self_update_button,
         ):
             _set_button_role(button, "secondary")
         _set_button_role(self.uninstall_service_button, "danger")
@@ -511,6 +518,42 @@ class MainWindow(QMainWindow):
 
     def open_github_help(self) -> None:
         _show_github_help(self)
+
+    def update_app_manager(self) -> None:
+        root_dir = self.installation_manager.base_dir
+        venv_python = root_dir / ".venv" / "Scripts" / "python.exe"
+        if not (root_dir / ".git").exists():
+            self._show_error("Update App Manager", f"App Manager root is not a Git repository:\n{root_dir}")
+            return
+        if not venv_python.exists():
+            self._show_error("Update App Manager", f"Virtual environment Python not found:\n{venv_python}")
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Update App Manager",
+            "This opens a command window, pulls the latest App Manager version, reinstalls it, "
+            "then starts App Manager again. The current window will close. Continue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        command = (
+            f'cd /d "{root_dir}" '
+            f'&& git pull '
+            f'&& "{venv_python}" -m pip install -e . '
+            f'&& app-manager'
+        )
+        try:
+            subprocess.Popen(
+                ["cmd.exe", "/k", command],
+                cwd=root_dir,
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+            )
+        except OSError as exc:
+            self._show_error("Update App Manager", str(exc))
+            return
+        self.close()
 
     def add_app(self) -> None:
         dialog = AppConfigDialog(self.manager_config, parent=self)
@@ -881,6 +924,7 @@ class MainWindow(QMainWindow):
             self.scan_button.setEnabled(self._scan_thread is None)
             self.settings_button.setEnabled(True)
             self.github_help_button.setEnabled(True)
+            self.self_update_button.setEnabled(True)
             return
 
         dev_supported = config.mode in {"dev", "both"}
@@ -917,6 +961,7 @@ class MainWindow(QMainWindow):
         self.scan_button.setEnabled(self._scan_thread is None)
         self.settings_button.setEnabled(True)
         self.github_help_button.setEnabled(True)
+        self.self_update_button.setEnabled(True)
 
     def _set_app_table_row(self, row: int, config: AppConfig, snapshot: AppSnapshot) -> None:
         values = [
