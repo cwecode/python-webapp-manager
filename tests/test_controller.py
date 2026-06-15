@@ -70,6 +70,16 @@ class _FakeUpdater:
         return self.result
 
 
+class _FakePreflightUpdater(_FakeUpdater):
+    def __init__(self, preflight: ActionResult, result: ActionResult | None = None) -> None:
+        super().__init__(result)
+        self.preflight = preflight
+
+    def check_update_preconditions(self, config: AppConfig) -> ActionResult:
+        self.calls.append("check_update_preconditions")
+        return self.preflight
+
+
 class _FakeHealthChecker:
     def check(self, url: str | None, timeout: float = 2.0) -> tuple[str, str]:
         return "disabled", "no health URL configured"
@@ -157,6 +167,22 @@ def test_update_app_keeps_stopped_runtime_stopped(tmp_path: Path) -> None:
     assert process_runner.calls == ["get_status"]
     assert service_runner.calls == ["get_status"]
     assert updater.calls == ["update"]
+
+
+def test_update_app_checks_git_before_stopping_runtime(tmp_path: Path) -> None:
+    config = _make_config(tmp_path, mode="both")
+    process_runner = _FakeProcessRunner(tmp_path / "runtime", ("running", "PID 1234"))
+    service_runner = _FakeServiceRunner(("stopped", "service is stopped"))
+    updater = _FakePreflightUpdater(ActionResult(False, "working tree is dirty"))
+    controller = AppController(process_runner, service_runner, updater, _FakeHealthChecker())
+
+    result = controller.update_app(config)
+
+    assert result.ok is False
+    assert result.message == "working tree is dirty"
+    assert process_runner.calls == []
+    assert service_runner.calls == []
+    assert updater.calls == ["check_update_preconditions"]
 
 
 def test_snapshot_includes_dev_runtime_started_at(tmp_path: Path) -> None:

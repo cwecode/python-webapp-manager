@@ -194,6 +194,9 @@ Update performs:
 6. optional init command
 7. restart the previously active runtime
 
+If the working tree has local changes, App Manager aborts before stopping the runtime and shows the dirty files reported by Git.
+Clean the repository first by committing, reverting, stashing, or ignoring generated files that should not be tracked.
+
 ## Practical Server Takeover
 
 When an old Python server is stuck on a port:

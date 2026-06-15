@@ -67,16 +67,9 @@ class AppUpdater:
         return str(config.repo_path.resolve()), config.branch
 
     def update(self, config: AppConfig) -> ActionResult:
-        if not config.repo_path.exists():
-            return ActionResult(False, f"repo path not found: {config.repo_path}")
-        if not config.python_path.exists():
-            return ActionResult(False, f"python path not found: {config.python_path}")
-
-        dirty = self._run(["git", "status", "--porcelain"], cwd=config.repo_path)
-        if not dirty.ok:
-            return dirty
-        if dirty.message.strip():
-            return ActionResult(False, "working tree is dirty; update aborted")
+        preflight = self.check_update_preconditions(config)
+        if not preflight.ok:
+            return preflight
 
         steps = [
             ["git", "fetch", "--all", "--prune"],
@@ -109,6 +102,23 @@ class AppUpdater:
 
         return ActionResult(True, "update completed")
 
+    def check_update_preconditions(self, config: AppConfig) -> ActionResult:
+        if not config.repo_path.exists():
+            return ActionResult(False, f"repo path not found: {config.repo_path}")
+        if not config.python_path.exists():
+            return ActionResult(False, f"python path not found: {config.python_path}")
+
+        dirty = self._run(["git", "status", "--porcelain"], cwd=config.repo_path)
+        if not dirty.ok:
+            return dirty
+        if dirty.message.strip():
+            return ActionResult(
+                False,
+                "working tree is dirty; update aborted before stopping the runtime:\n"
+                f"{_format_dirty_status(dirty.message)}",
+            )
+        return ActionResult(True, "update preconditions ok")
+
     def _run(self, command: list[str], cwd: Path) -> ActionResult:
         result = run_capture(
             command,
@@ -116,3 +126,12 @@ class AppUpdater:
         )
         message = result.stdout.strip() or result.stderr.strip() or "command completed"
         return ActionResult(result.returncode == 0, message)
+
+
+def _format_dirty_status(status: str) -> str:
+    lines = [line.strip() for line in status.splitlines() if line.strip()]
+    if not lines:
+        return "git status reported local changes"
+    visible = lines[:12]
+    suffix = "" if len(lines) <= len(visible) else f"\n... and {len(lines) - len(visible)} more"
+    return "\n".join(visible) + suffix

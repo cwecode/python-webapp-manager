@@ -99,6 +99,12 @@ class AppController:
         if config.mode == "observed":
             return self._record(config, "update_app", ActionResult(False, "observed apps cannot be updated"))
 
+        checker = getattr(self.updater, "check_update_preconditions", None)
+        if checker is not None:
+            preflight = checker(config)
+            if not preflight.ok:
+                return self._record(config, "update_app", preflight)
+
         snapshot = self.snapshot(config)
         if snapshot.active_mode == "dev":
             stop_result = self.process_runner.stop_dev(config)

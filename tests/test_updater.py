@@ -51,7 +51,8 @@ def test_updater_blocks_dirty_working_tree(monkeypatch, tmp_path: Path) -> None:
     result = updater.update(config)
 
     assert result.ok is False
-    assert result.message == "working tree is dirty; update aborted"
+    assert "working tree is dirty; update aborted before stopping the runtime" in result.message
+    assert "M app.py" in result.message
     assert commands == [["git", "status", "--porcelain"]]
 
 

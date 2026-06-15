@@ -964,8 +964,8 @@ pause
         self.install_service_button.setEnabled(prod_supported)
         self.uninstall_service_button.setEnabled(prod_supported)
         self.start_service_button.setEnabled(prod_supported and not runtime_active)
-        self.stop_service_button.setEnabled(snapshot.active_mode == "prod")
-        self.restart_service_button.setEnabled(snapshot.active_mode == "prod")
+        self.stop_service_button.setEnabled(prod_supported)
+        self.restart_service_button.setEnabled(prod_supported)
         self.health_button.setEnabled(True)
         self.update_button.setEnabled(not observed)
         if snapshot.git_state == "update_available":
