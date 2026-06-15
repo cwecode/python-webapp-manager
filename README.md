@@ -79,6 +79,7 @@ C:\ProgramData\python-webapp-manager\
 Im Setup waehlst du deshalb nur den Root-Ordner. Die Unterordner werden automatisch abgeleitet.
 Die App prueft dabei im Hintergrund, ob bereits eine WinSW-Installation in typischen Windows-Ordnern vorhanden ist.
 Fuer WinSW kannst du dann entweder den verwalteten Standardpfad unter `tools\` verwenden oder einen erkannten bzw. manuell ausgewaehlten Pfad uebernehmen.
+Bei Service-Aktionen kopiert die App WinSW pro Service in den jeweiligen Runtime-Ordner, z. B. als `demo-service.exe` neben `demo-service.xml`, weil WinSW EXE und XML mit gleichem Namen nebeneinander erwartet.
 Die lokale Maschinenkonfiguration wird als `configs/manager.json` erzeugt und ist bewusst nicht versioniert.
 
 Die App liest Konfigurationen aus `configs/apps/*.json`.

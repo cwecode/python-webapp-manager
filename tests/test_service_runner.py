@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from subprocess import CompletedProcess
 
 from app_manager.core.service_runner import ServiceRunner
 from app_manager.models import AppConfig
@@ -50,3 +51,25 @@ def test_write_xml_uses_waitress_serve_executable(tmp_path: Path) -> None:
 
     assert service.findtext("executable") == str(waitress_exe)
     assert service.findtext("arguments") == "--host 127.0.0.1 --port 8080 wsgi:app"
+
+
+def test_run_winsw_uses_service_named_wrapper_next_to_xml(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.winsw_exe_path.write_bytes(b"winsw")
+    runner = ServiceRunner(tmp_path / "runtime")
+    calls: list[tuple[list[str], Path | None]] = []
+
+    def fake_run_capture(command: list[str], *, cwd: Path | None = None, **kwargs) -> CompletedProcess:
+        calls.append((command, cwd))
+        return CompletedProcess(command, 0, stdout="Stopped", stderr="")
+
+    monkeypatch.setattr("app_manager.core.service_runner.run_capture", fake_run_capture)
+
+    result = runner._run_winsw(config, "status")
+
+    runtime_dir = tmp_path / "runtime" / "demo"
+    wrapper_path = runtime_dir / "demo-service.exe"
+    assert result.ok is True
+    assert wrapper_path.read_bytes() == b"winsw"
+    assert (runtime_dir / "demo-service.xml").exists()
+    assert calls == [([str(wrapper_path), "status"], runtime_dir)]

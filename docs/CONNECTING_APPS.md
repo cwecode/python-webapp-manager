@@ -110,6 +110,9 @@ Recommended setup:
 
 The app downloads the current release asset matching the machine architecture from the official WinSW GitHub releases.
 
+When a service action runs, App Manager writes `<service_name>.xml` into the app runtime directory and copies the configured WinSW executable there as `<service_name>.exe`.
+WinSW expects the executable and XML file to have the same base name and live next to each other.
+
 ## Finding a Blocked Port
 
 Use `Scan Services` when you need to identify what is blocking a port.

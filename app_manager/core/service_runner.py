@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import shutil
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -79,12 +80,29 @@ class ServiceRunner:
             return ActionResult(False, f"WinSW executable not found: {config.winsw_exe_path}")
 
         self.write_xml(config)
+        try:
+            wrapper_exe_path = self._ensure_wrapper_exe(config)
+        except OSError as exc:
+            return ActionResult(False, f"failed to prepare WinSW wrapper: {exc}")
         result = run_capture(
-            [str(config.winsw_exe_path), command],
+            [str(wrapper_exe_path), command],
             cwd=self.store.app_dir(config),
         )
         message = result.stdout.strip() or result.stderr.strip() or f"WinSW {command} finished with code {result.returncode}"
         return ActionResult(result.returncode == 0, message)
+
+    def _ensure_wrapper_exe(self, config: AppConfig) -> Path:
+        target_path = self._wrapper_exe_path(config)
+        source_path = config.winsw_exe_path.resolve()
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if source_path == target_path.resolve():
+            return target_path
+        if not target_path.exists() or source_path.stat().st_size != target_path.stat().st_size:
+            shutil.copy2(source_path, target_path)
+        return target_path
+
+    def _wrapper_exe_path(self, config: AppConfig) -> Path:
+        return self.store.app_dir(config) / f"{config.service_name}.exe"
 
     def _service_arguments(self, config: AppConfig) -> list[str]:
         if config.entry_kind == "uvicorn":
