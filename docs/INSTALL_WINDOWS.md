@@ -41,7 +41,7 @@ py -m venv .venv
 python -m pip install --upgrade pip
 pip install -e .
 
-app-manager
+".venv\Scripts\app-manager.exe"
 ```
 
 If `py` is not available, use:
@@ -63,7 +63,7 @@ py -m venv .venv
 python -m pip install --upgrade pip
 pip install -e .
 
-app-manager
+.\.venv\Scripts\app-manager.exe
 ```
 
 If PowerShell blocks script activation, run:
@@ -163,7 +163,7 @@ Run this in `cmd.exe`:
 cd /d C:\Python\App_Manager
 git pull
 ".venv\Scripts\python.exe" -m pip install -e .
-app-manager
+".venv\Scripts\app-manager.exe"
 ```
 
 ## Connecting Private GitHub Repositories

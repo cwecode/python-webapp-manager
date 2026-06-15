@@ -522,6 +522,7 @@ class MainWindow(QMainWindow):
     def update_app_manager(self) -> None:
         root_dir = self.installation_manager.base_dir
         venv_python = root_dir / ".venv" / "Scripts" / "python.exe"
+        venv_app_manager = root_dir / ".venv" / "Scripts" / "app-manager.exe"
         if not (root_dir / ".git").exists():
             self._show_error("Update App Manager", f"App Manager root is not a Git repository:\n{root_dir}")
             return
@@ -542,7 +543,7 @@ class MainWindow(QMainWindow):
             f'cd /d "{root_dir}" '
             f'&& git pull '
             f'&& "{venv_python}" -m pip install -e . '
-            f'&& app-manager'
+            f'&& "{venv_app_manager}"'
         )
         try:
             subprocess.Popen(

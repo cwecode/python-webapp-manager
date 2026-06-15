@@ -36,7 +36,7 @@ py -m venv .venv
 .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -e .
-app-manager
+".venv\Scripts\app-manager.exe"
 ```
 
 Spaetere Updates des App Managers koennen direkt in der App ueber `Workspace -> Update App Manager` gestartet werden.
@@ -47,7 +47,7 @@ Spaetere Updates des App Managers koennen direkt in der App ueber `Workspace -> 
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-app-manager
+.\.venv\Scripts\app-manager.exe
 ```
 
 ### Betrieb / Server
@@ -56,7 +56,7 @@ app-manager
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-app-manager
+.\.venv\Scripts\app-manager.exe
 ```
 
 Beim ersten Start fuehrt dich die App durch eine kurze Einrichtung fuer `apps_dir` und den zentralen Installationsordner unter `C:\ProgramData\python-webapp-manager`.
