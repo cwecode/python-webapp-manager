@@ -74,7 +74,7 @@ class AppUpdater:
         steps = [
             ["git", "fetch", "--all", "--prune"],
             ["git", "checkout", config.branch],
-            ["git", "pull", "--ff-only", "origin", config.branch],
+            ["git", "pull", "--ff-only", "--autostash", "origin", config.branch],
         ]
         for step in steps:
             result = self._run(step, cwd=config.repo_path)
@@ -108,14 +108,9 @@ class AppUpdater:
         if not config.python_path.exists():
             return ActionResult(False, f"python path not found: {config.python_path}")
 
-        dirty = self._run(["git", "status", "--porcelain"], cwd=config.repo_path)
-        if not dirty.ok:
-            return dirty
-        if dirty.message.strip():
-            return ActionResult(
-                False,
-                _format_dirty_update_message(dirty.message),
-            )
+        inside = self._run(["git", "rev-parse", "--is-inside-work-tree"], cwd=config.repo_path)
+        if not inside.ok or inside.message.strip().lower() != "true":
+            return ActionResult(False, "repo path is not a git working tree")
         return ActionResult(True, "update preconditions ok")
 
     def _run(self, command: list[str], cwd: Path) -> ActionResult:
@@ -125,28 +120,3 @@ class AppUpdater:
         )
         message = result.stdout.strip() or result.stderr.strip()
         return ActionResult(result.returncode == 0, message)
-
-
-def _format_dirty_status(status: str) -> str:
-    lines = [line.strip() for line in status.splitlines() if line.strip()]
-    if not lines:
-        return "git status reported local changes"
-    visible = lines[:12]
-    suffix = "" if len(lines) <= len(visible) else f"\n... and {len(lines) - len(visible)} more"
-    return "\n".join(visible) + suffix
-
-
-def _format_dirty_update_message(status: str) -> str:
-    return (
-        "working tree is dirty; update aborted before stopping the runtime.\n\n"
-        "Git reports local changes in the app repository:\n"
-        f"{_format_dirty_status(status)}\n\n"
-        "Why this is blocked:\n"
-        "Update uses git pull --ff-only. Local changes or untracked files can be overwritten "
-        "or cause merge conflicts, so the running app was left untouched.\n\n"
-        "Fix options:\n"
-        "- If these are intentional code/config changes: commit or stash them.\n"
-        "- If these are generated runtime data files: move them outside the repo, or add them to .gitignore.\n"
-        "- If generated files are already tracked: remove them from Git tracking with git rm --cached, commit that change, "
-        "then run Update again."
-    )

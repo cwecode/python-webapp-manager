@@ -182,7 +182,6 @@ For GitHub-backed updates, see `docs/INSTALL_WINDOWS.md` for the full server set
 The update action expects:
 
 - `repo_path` is a Git repository
-- working tree is clean
 - `branch` exists
 - `python_path` exists
 - `requirements_file` exists or `repo_path\requirements.txt` exists
@@ -192,13 +191,13 @@ Update performs:
 1. stop active runtime, if App Manager knows one is active
 2. `git fetch --all --prune`
 3. `git checkout <branch>`
-4. `git pull --ff-only origin <branch>`
+4. `git pull --ff-only --autostash origin <branch>`
 5. `pip install -r requirements.txt`, if present
 6. optional init command
 7. restart the previously active runtime
 
-If the working tree has local changes, App Manager aborts before stopping the runtime and shows the dirty files reported by Git.
-Clean the repository first by committing, reverting, stashing, or ignoring generated files that should not be tracked.
+If the working tree has local changes, Git temporarily stashes them with `--autostash` and applies them again after the pull.
+If Git reports a conflict, resolve it in the app repository and run Update again.
 
 Typical dirty files are generated runtime data such as:
 

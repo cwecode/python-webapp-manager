@@ -1273,14 +1273,16 @@ git status</pre>
 
         <h2>What Update does</h2>
         <p>
-          Update first checks that the working tree has no local changes. Then it runs:
+          Update checks that the path is a Git working tree. Local changes do not block the update;
+          Git temporarily stashes them with <code>--autostash</code> and applies them again after the pull.
         </p>
         <pre>git fetch --all --prune
 git checkout &lt;branch&gt;
-git pull --ff-only origin &lt;branch&gt;</pre>
+git pull --ff-only --autostash origin &lt;branch&gt;</pre>
         <p>
           After that it installs <code>requirements.txt</code> if configured or present,
-          and runs the optional init command if one is configured.
+          and runs the optional init command if one is configured. If Git reports a conflict,
+          resolve it in the app repository and run Update again.
         </p>
 
         <h2>Private GitHub repositories</h2>

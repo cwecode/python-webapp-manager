@@ -208,10 +208,11 @@ When you click `Update`, App Manager runs:
 ```bat
 git fetch --all --prune
 git checkout main
-git pull --ff-only origin main
+git pull --ff-only --autostash origin main
 ```
 
 Then it installs `requirements.txt` if configured or present, runs the optional init command, and restarts the previously active runtime when possible.
+Local changes do not block Update; Git stashes them temporarily with `--autostash` and reapplies them after the pull. If Git reports a conflict, resolve it in the app repository and run Update again.
 
 ## Terminal Server Notes
 
@@ -252,11 +253,18 @@ cd /d C:\Python\your_web_app
 git fetch origin main --prune
 ```
 
-Working tree has local changes:
+Working tree has local changes or Git reports a conflict:
 
 ```bat
 cd /d C:\Python\your_web_app
 git status
 ```
 
-App Manager intentionally blocks updates when local files have uncommitted changes.
+Update uses `git pull --ff-only --autostash`, so normal local changes are temporarily stashed by Git.
+If Git reports a conflict, resolve it manually:
+
+```bat
+git status
+```
+
+Then commit, restore, or stash the conflicting files and run Update again.

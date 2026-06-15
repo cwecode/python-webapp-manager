@@ -36,34 +36,31 @@ def _make_config(tmp_path: Path) -> AppConfig:
     )
 
 
-def test_updater_blocks_dirty_working_tree(monkeypatch, tmp_path: Path) -> None:
+def test_updater_pulls_with_autostash_when_working_tree_is_dirty(monkeypatch, tmp_path: Path) -> None:
     updater = AppUpdater()
     config = _make_config(tmp_path)
     commands: list[list[str]] = []
 
     def fake_run(command: list[str], cwd: Path) -> ActionResult:
         commands.append(command)
-        if command[:3] == ["git", "status", "--porcelain"]:
-            return ActionResult(True, " M app.py")
+        if command[:3] == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return ActionResult(True, "true")
         return ActionResult(True, "ok")
 
     monkeypatch.setattr(updater, "_run", fake_run)
     result = updater.update(config)
 
-    assert result.ok is False
-    assert "working tree is dirty; update aborted before stopping the runtime" in result.message
-    assert "M app.py" in result.message
-    assert "running app was left untouched" in result.message
-    assert "git rm --cached" in result.message
-    assert commands == [["git", "status", "--porcelain"]]
+    assert result.ok is True
+    assert result.message == "update completed"
+    assert ["git", "pull", "--ff-only", "--autostash", "origin", "main"] in commands
 
 
-def test_check_update_preconditions_accepts_empty_git_status_output(monkeypatch, tmp_path: Path) -> None:
+def test_check_update_preconditions_accepts_git_working_tree(monkeypatch, tmp_path: Path) -> None:
     updater = AppUpdater()
     config = _make_config(tmp_path)
 
     def fake_run_capture(command: list[str], cwd: Path):
-        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        return type("Result", (), {"returncode": 0, "stdout": "true", "stderr": ""})()
 
     monkeypatch.setattr("app_manager.core.updater.run_capture", fake_run_capture)
 
