@@ -113,6 +113,9 @@ The app downloads the current release asset matching the machine architecture fr
 When a service action runs, App Manager writes `<service_name>.xml` into the app runtime directory and copies the configured WinSW executable there as `<service_name>.exe`.
 WinSW expects the executable and XML file to have the same base name and live next to each other.
 
+Run `Install Service` once before using `Start Service`, `Stop Service`, or `Restart Service`.
+If Windows reports that the service is not installed, App Manager treats the service as stopped and asks you to install it first.
+
 ## Finding a Blocked Port
 
 Use `Scan Services` when you need to identify what is blocking a port.
@@ -211,3 +214,11 @@ When an old Python server is stuck on a port:
 8. Add a health URL and verify with `Check Health`.
 
 After that, the app is manageable through the normal App Manager flow.
+
+For an app that is already configured but still has an external process listening on its port:
+
+1. Select the app.
+2. Confirm the status detail shows an external PID listening on the configured host and port.
+3. Click `Stop External PID` to force-stop that process.
+4. For service mode, click `Install Service` once.
+5. Then use `Start Service`, `Stop Service`, or `Restart Service` normally.

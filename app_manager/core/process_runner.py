@@ -105,6 +105,18 @@ class ProcessRunner:
             return stop_result
         return self.start_dev(config)
 
+    def stop_listening_process(self, config: AppConfig) -> ActionResult:
+        pid = self.find_listening_pid(config)
+        if pid is None:
+            return ActionResult(False, f"no listening process found on {config.host}:{config.port}")
+        if pid <= 4:
+            return ActionResult(False, f"refusing to stop system PID {pid}")
+
+        result = run_capture(["taskkill", "/F", "/PID", str(pid), "/T"])
+        if result.returncode != 0:
+            return ActionResult(False, result.stderr.strip() or result.stdout.strip() or f"failed to stop PID {pid}")
+        return ActionResult(True, f"force stopped external PID {pid}")
+
     def get_status(self, config: AppConfig) -> tuple[RuntimeStatus, str]:
         if config.mode == "observed":
             return "unknown", "observed apps are not process-managed"
@@ -171,3 +183,56 @@ class ProcessRunner:
             ["tasklist", "/FI", f"PID eq {pid}"],
         )
         return result.returncode == 0 and str(pid) in result.stdout
+
+    def find_listening_pid(self, config: AppConfig) -> int | None:
+        records = self._load_tcp_listeners(config.port)
+        for record in records:
+            pid = _to_int(record.get("OwningProcess"))
+            address = str(record.get("LocalAddress", "")).strip()
+            if pid > 0 and _address_matches(config.host, address):
+                return pid
+        return None
+
+    def _load_tcp_listeners(self, port: int) -> list[dict[str, object]]:
+        script = (
+            f"$port = {port}; "
+            "Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | "
+            "Select-Object LocalAddress, LocalPort, OwningProcess | "
+            "ConvertTo-Json -Compress"
+        )
+        command = (
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+            "$OutputEncoding = [Console]::OutputEncoding; "
+            f"{script}"
+        )
+        result = run_capture(["powershell", "-NoProfile", "-Command", command])
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        try:
+            payload = json.loads(result.stdout.lstrip("\ufeff"))
+        except json.JSONDecodeError:
+            return []
+        if payload is None:
+            return []
+        if isinstance(payload, dict):
+            return [payload]
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        return []
+
+
+def _to_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _address_matches(config_host: str, listener_address: str) -> bool:
+    host = config_host.strip().lower()
+    address = listener_address.strip().lower()
+    if host in {"0.0.0.0", "::"}:
+        return True
+    if host in {"127.0.0.1", "localhost", "::1"}:
+        return address in {"127.0.0.1", "localhost", "::1", "0.0.0.0", "::"}
+    return address == host or address in {"0.0.0.0", "::"}

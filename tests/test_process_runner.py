@@ -59,3 +59,32 @@ def test_attach_dev_process_rejects_stopped_pid(tmp_path: Path) -> None:
 
     assert result.ok is False
     assert "not running" in result.message
+
+
+def test_find_listening_pid_matches_loopback_to_wildcard_listener(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ProcessRunner(tmp_path / "runtime")
+    runner._load_tcp_listeners = lambda port: [  # type: ignore[method-assign]
+        {"LocalAddress": "0.0.0.0", "LocalPort": port, "OwningProcess": 4321}
+    ]
+
+    assert runner.find_listening_pid(config) == 4321
+
+
+def test_stop_listening_process_force_kills_detected_pid(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ProcessRunner(tmp_path / "runtime")
+    runner.find_listening_pid = lambda config: 4321  # type: ignore[method-assign]
+    commands: list[list[str]] = []
+
+    def fake_run_capture(command: list[str]):
+        commands.append(command)
+        return type("Result", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    monkeypatch.setattr("app_manager.core.process_runner.run_capture", fake_run_capture)
+
+    result = runner.stop_listening_process(config)
+
+    assert result.ok is True
+    assert result.message == "force stopped external PID 4321"
+    assert commands == [["taskkill", "/F", "/PID", "4321", "/T"]]

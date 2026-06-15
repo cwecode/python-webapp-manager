@@ -76,58 +76,72 @@ class AppConfigDialog(QWizard):
         self.setStyleSheet(
             """
             QWizard {
-                background-color: #141922;
-                color: #f3f4f6;
+                background: #151719;
+                color: #eef2f6;
+            }
+            QWizardPage {
+                background: #151719;
             }
             QWizard QWidget {
-                color: #f3f4f6;
+                color: #eef2f6;
             }
             QWizard QLabel {
-                color: #f3f4f6;
+                color: #dce4ed;
             }
             QWizard QLineEdit,
             QWizard QComboBox,
             QWizard QSpinBox {
-                min-height: 34px;
+                min-height: 30px;
                 padding: 6px 10px;
-                border: 1px solid #384152;
-                border-radius: 8px;
-                background-color: #0c1119;
-                color: #f8fafc;
-                selection-background-color: #2563eb;
+                border: 1px solid #3a424a;
+                border-radius: 5px;
+                background: #111315;
+                color: #eef2f6;
+                selection-background-color: #31516b;
+            }
+            QWizard QLineEdit:focus,
+            QWizard QComboBox:focus,
+            QWizard QSpinBox:focus {
+                border-color: #64748b;
             }
             QWizard QComboBox QAbstractItemView {
-                background-color: #0c1119;
-                color: #f8fafc;
-                selection-background-color: #2563eb;
+                background: #1d2023;
+                color: #eef2f6;
+                border: 1px solid #3a424a;
+                selection-background-color: #31516b;
             }
             QWizard QCheckBox {
-                color: #f3f4f6;
+                color: #dce4ed;
                 spacing: 8px;
             }
             QWizard QPushButton {
-                min-height: 34px;
+                min-height: 30px;
                 padding: 6px 12px;
-                border: 1px solid #3b82f6;
-                border-radius: 8px;
-                background-color: #1d4ed8;
-                color: #ffffff;
+                border: 1px solid #3a424a;
+                border-radius: 5px;
+                background: #252a2f;
+                color: #eef2f6;
+                font-weight: 600;
             }
             QWizard QPushButton:hover {
-                background-color: #2563eb;
+                background: #303740;
+                border-color: #4b5563;
+            }
+            QWizard QPushButton:pressed {
+                background: #1f2429;
             }
             QWizard QPushButton:disabled {
-                border-color: #475569;
-                background-color: #334155;
-                color: #cbd5e1;
+                border-color: #30363d;
+                background: #202326;
+                color: #717c89;
             }
             QWizard::title {
-                color: #ffffff;
-                font-size: 20px;
+                color: #f7fafc;
+                font-size: 18px;
                 font-weight: 700;
             }
             QWizard::subTitle {
-                color: #cbd5e1;
+                color: #94a3b8;
             }
             """
         )

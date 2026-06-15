@@ -30,6 +30,20 @@ class _FakeProcessRunner:
         return ActionResult(True, "restarted dev")
 
 
+class _FakeExternalProcessRunner(_FakeProcessRunner):
+    def __init__(self, runtime_root: Path, status: tuple[str, str], external_pid: int | None) -> None:
+        super().__init__(runtime_root, status)
+        self.external_pid = external_pid
+
+    def find_listening_pid(self, config: AppConfig) -> int | None:
+        self.calls.append("find_listening_pid")
+        return self.external_pid
+
+    def stop_listening_process(self, config: AppConfig) -> ActionResult:
+        self.calls.append("stop_listening_process")
+        return ActionResult(True, f"force stopped external PID {self.external_pid}")
+
+
 class _FakeServiceRunner:
     def __init__(self, status: tuple[str, str]) -> None:
         self._status = status
@@ -199,3 +213,30 @@ def test_snapshot_includes_dev_runtime_started_at(tmp_path: Path) -> None:
     snapshot = controller.snapshot(config)
 
     assert snapshot.runtime_started_at == started_at
+
+
+def test_snapshot_reports_external_port_listener(tmp_path: Path) -> None:
+    config = _make_config(tmp_path, mode="both")
+    process_runner = _FakeExternalProcessRunner(tmp_path / "runtime", ("stopped", "no dev process tracked"), 4321)
+    service_runner = _FakeServiceRunner(("stopped", "service is stopped"))
+    controller = AppController(process_runner, service_runner, _FakeUpdater(), _FakeHealthChecker())
+
+    snapshot = controller.snapshot(config)
+
+    assert snapshot.status == "running"
+    assert snapshot.active_mode == "unknown"
+    assert "external PID 4321" in snapshot.status_detail
+    assert process_runner.calls == ["get_status", "find_listening_pid"]
+
+
+def test_stop_external_process_delegates_to_process_runner(tmp_path: Path) -> None:
+    config = _make_config(tmp_path, mode="both")
+    process_runner = _FakeExternalProcessRunner(tmp_path / "runtime", ("stopped", "no dev process tracked"), 4321)
+    service_runner = _FakeServiceRunner(("stopped", "service is stopped"))
+    controller = AppController(process_runner, service_runner, _FakeUpdater(), _FakeHealthChecker())
+
+    result = controller.stop_external_process(config)
+
+    assert result.ok is True
+    assert result.message == "force stopped external PID 4321"
+    assert process_runner.calls == ["stop_listening_process"]

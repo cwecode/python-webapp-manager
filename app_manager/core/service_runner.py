@@ -26,9 +26,16 @@ class ServiceRunner:
         return self._run_winsw(config, "start")
 
     def stop_service(self, config: AppConfig) -> ActionResult:
-        return self._run_winsw(config, "stop")
+        result = self._run_winsw(config, "stop")
+        if not result.ok and _service_not_installed(result.message):
+            return ActionResult(True, "service is not installed")
+        return result
 
     def restart_service(self, config: AppConfig) -> ActionResult:
+        status, detail = self.get_status(config)
+        if _service_not_installed(detail):
+            return ActionResult(False, "service is not installed; click Install Service first")
+
         stop_result = self.stop_service(config)
         if not stop_result.ok and "stopped" not in stop_result.message.lower():
             return stop_result
@@ -40,6 +47,8 @@ class ServiceRunner:
     def get_status(self, config: AppConfig) -> tuple[RuntimeStatus, str]:
         result = self._run_winsw(config, "status")
         if not result.ok:
+            if _service_not_installed(result.message):
+                return "stopped", "service is not installed"
             return "error", result.message
 
         message = result.message.lower()
@@ -138,3 +147,14 @@ class ServiceRunner:
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
         except (AttributeError, OSError):
             return False
+
+
+def _service_not_installed(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "not an installed service" in normalized
+        or "does not exist as an installed service" in normalized
+        or "service is not installed" in normalized
+        or "kein installierter dienst" in normalized
+        or "ist kein installierter dienst" in normalized
+    )

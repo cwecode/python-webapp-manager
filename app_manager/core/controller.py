@@ -36,6 +36,13 @@ class AppController:
         dev_status, dev_detail = self._dev_status(config)
         prod_status, prod_detail = self._prod_status(config)
         status, detail, active_mode = self._resolve_runtime_status(config, dev_status, dev_detail, prod_status, prod_detail)
+        listener_finder = getattr(self.process_runner, "find_listening_pid", None)
+        if active_mode == "none" and listener_finder is not None:
+            external_pid = listener_finder(config)
+            if external_pid is not None:
+                status = "running"
+                detail = f"external PID {external_pid} is listening on {config.host}:{config.port}"
+                active_mode = "unknown"
 
         issues = self._config_issues(config)
         if issues and status in {"stopped", "unknown"}:
@@ -66,6 +73,9 @@ class AppController:
 
     def restart_dev(self, config: AppConfig) -> ActionResult:
         return self._record(config, "restart_dev", self.process_runner.restart_dev(config))
+
+    def stop_external_process(self, config: AppConfig) -> ActionResult:
+        return self._record(config, "stop_external_process", self.process_runner.stop_listening_process(config))
 
     def install_service(self, config: AppConfig) -> ActionResult:
         return self._record(config, "install_service", self.service_runner.install_service(config))

@@ -263,6 +263,11 @@ class MainWindow(QMainWindow):
         self.stop_button.clicked.connect(self.stop_dev)
         app_action_grid.addWidget(self.stop_button, 0, 1)
 
+        self.stop_external_button = QPushButton("Stop External PID")
+        self.stop_external_button.setToolTip("Force stop the process currently listening on this app's configured port.")
+        self.stop_external_button.clicked.connect(self.stop_external_process)
+        app_action_grid.addWidget(self.stop_external_button, 2, 0, 1, 2)
+
         self.restart_button = QPushButton("Restart Dev")
         self.restart_button.clicked.connect(self.restart_dev)
         service_action_grid.addWidget(self.restart_button, 0, 0)
@@ -320,6 +325,7 @@ class MainWindow(QMainWindow):
         _set_button_role(self.open_app_button, "primary")
         _set_button_role(self.start_button, "primary")
         _set_button_role(self.stop_button, "danger")
+        _set_button_role(self.stop_external_button, "danger")
         _set_button_role(self.health_button, "secondary")
         _set_button_role(self.update_button, "warning")
         for button in (
@@ -463,6 +469,9 @@ class MainWindow(QMainWindow):
 
     def restart_dev(self) -> None:
         self._run_selected_action("Restart Dev", self.controller.restart_dev)
+
+    def stop_external_process(self) -> None:
+        self._run_selected_action("Stop External PID", self.controller.stop_external_process)
 
     def check_health(self) -> None:
         self._run_selected_action("Check Health", self.controller.check_health)
@@ -926,6 +935,7 @@ pause
             for button in (
                 self.start_button,
                 self.stop_button,
+                self.stop_external_button,
                 self.restart_button,
                 self.edit_app_button,
                 self.open_app_button,
@@ -953,13 +963,15 @@ pause
         dev_supported = config.mode in {"dev", "both"}
         prod_supported = config.mode in {"prod", "both"}
         observed = config.mode == "observed"
-        runtime_active = snapshot.active_mode in {"dev", "prod"}
+        external_active = snapshot.active_mode == "unknown" and "external pid" in snapshot.status_detail.lower()
+        runtime_active = snapshot.active_mode in {"dev", "prod", "unknown"}
 
         self.add_app_button.setEnabled(True)
         self.edit_app_button.setEnabled(True)
         self.open_app_button.setEnabled(True)
         self.start_button.setEnabled(dev_supported and not runtime_active)
         self.stop_button.setEnabled(snapshot.active_mode == "dev")
+        self.stop_external_button.setEnabled(dev_supported and external_active)
         self.restart_button.setEnabled(snapshot.active_mode == "dev")
         self.install_service_button.setEnabled(prod_supported)
         self.uninstall_service_button.setEnabled(prod_supported)

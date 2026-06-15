@@ -5,7 +5,7 @@ from xml.etree import ElementTree as ET
 from subprocess import CompletedProcess
 
 from app_manager.core.service_runner import ServiceRunner
-from app_manager.models import AppConfig
+from app_manager.models import ActionResult, AppConfig
 
 
 def _make_config(tmp_path: Path) -> AppConfig:
@@ -73,3 +73,45 @@ def test_run_winsw_uses_service_named_wrapper_next_to_xml(monkeypatch, tmp_path:
     assert wrapper_path.read_bytes() == b"winsw"
     assert (runtime_dir / "demo-service.xml").exists()
     assert calls == [([str(wrapper_path), "status"], runtime_dir)]
+
+
+def test_get_status_treats_not_installed_service_as_stopped(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        return ActionResult(False, "FATAL - Der angegebene Dienst ist kein installierter Dienst.")
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    assert runner.get_status(config) == ("stopped", "service is not installed")
+
+
+def test_stop_service_succeeds_when_service_is_not_installed(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        return ActionResult(False, "FATAL - The specified service does not exist as an installed service.")
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.stop_service(config)
+
+    assert result.ok is True
+    assert result.message == "service is not installed"
+
+
+def test_restart_service_requires_install_when_service_is_not_installed(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        return ActionResult(False, "FATAL - service is not installed")
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.restart_service(config)
+
+    assert result.ok is False
+    assert result.message == "service is not installed; click Install Service first"
