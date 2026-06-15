@@ -143,9 +143,9 @@ def test_discovery_treats_missing_shell_output_as_empty_result() -> None:
 
 def test_run_powershell_decodes_utf8_output_without_crashing() -> None:
     discovery = WindowsAppDiscovery()
-    completed = CompletedProcess(args=["powershell"], returncode=0, stdout='[{"Id":1}]'.encode("utf-8"), stderr=b"")
+    completed = CompletedProcess(args=["powershell"], returncode=0, stdout='[{"Id":1}]', stderr="")
 
-    with patch("app_manager.core.discovery.subprocess.run", return_value=completed) as mocked_run:
+    with patch("app_manager.core.discovery.run_capture", return_value=completed) as mocked_run:
         output = discovery._run_powershell("Get-Process")
 
     assert output == '[{"Id":1}]'

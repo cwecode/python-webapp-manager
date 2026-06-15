@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from app_manager.core.config_checks import validate_app_config
 from app_manager.models import AppConfig, ConfigValidationError, DiscoveredApp
+from app_manager.ui.theme import MESSAGE_BOX_STYLESHEET, apply_dialog_style
 
 
 class DiscoveryDialog(QDialog):
@@ -48,9 +49,13 @@ class DiscoveryDialog(QDialog):
 
         self.setWindowTitle("Scan Local Services")
         self.resize(1100, 720)
+        apply_dialog_style(self)
 
         root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(14, 14, 14, 14)
+        root_layout.setSpacing(10)
         intro = QLabel("Pick a listener, review the generated config, then save or ignore it.")
+        intro.setObjectName("dialogIntro")
         intro.setWordWrap(True)
         root_layout.addWidget(intro)
 
@@ -65,6 +70,7 @@ class DiscoveryDialog(QDialog):
         self.result_table.setSelectionMode(QTableWidget.SingleSelection)
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.result_table.setSortingEnabled(True)
+        self.result_table.verticalHeader().setVisible(False)
         self.result_table.itemSelectionChanged.connect(self._on_selection_changed)
         header = self.result_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -82,16 +88,18 @@ class DiscoveryDialog(QDialog):
         splitter.addWidget(right_panel)
 
         self.detected_label = QLabel("No result selected")
+        self.detected_label.setObjectName("dialogHint")
         self.detected_label.setWordWrap(True)
         right_layout.addWidget(self.detected_label)
 
         self.attach_process_checkbox = QCheckBox("Attach this running process")
-        self.attach_process_checkbox.setToolTip("Stores the current PID so Stop Dev can stop it once.")
+        self.attach_process_checkbox.setToolTip("Stores the current PID so Stop App Process can stop it once.")
         right_layout.addWidget(self.attach_process_checkbox)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_container = QWidget()
+        scroll_container.setObjectName("dialogSurface")
         self.form_layout = QFormLayout(scroll_container)
         scroll_area.setWidget(scroll_container)
         right_layout.addWidget(scroll_area, 1)
@@ -376,27 +384,5 @@ def _confirm_validation_warnings(parent: QWidget, warnings: list[str]) -> bool:
     message.setInformativeText("\n".join(f"- {warning}" for warning in warnings) + "\n\nSave anyway?")
     message.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     message.setDefaultButton(QMessageBox.StandardButton.No)
-    message.setStyleSheet(
-        """
-        QMessageBox {
-            background-color: #f8fafc;
-        }
-        QMessageBox QLabel {
-            color: #111827;
-            min-width: 360px;
-        }
-        QMessageBox QPushButton {
-            min-width: 72px;
-            min-height: 30px;
-            padding: 4px 12px;
-            border: 1px solid #1d4ed8;
-            border-radius: 6px;
-            background-color: #2563eb;
-            color: #ffffff;
-        }
-        QMessageBox QPushButton:hover {
-            background-color: #1d4ed8;
-        }
-        """
-    )
+    message.setStyleSheet(MESSAGE_BOX_STYLESHEET)
     return message.exec() == QMessageBox.StandardButton.Yes

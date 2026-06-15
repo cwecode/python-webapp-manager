@@ -1,72 +1,44 @@
 # python-webapp-manager
 
-Windows-Desktop-Anwendung zum lokalen Verwalten interner Python-Web-Apps in Dev- und Prod-Modus.
+Windows desktop tool for managing local Python web apps.
 
-## Community
+It is intended for small internal apps that run on a workstation or terminal server and should be easy to start, stop, update from Git, monitor, or install as a Windows service.
 
-- Contributions are welcome through issues and pull requests.
-- Please read `CONTRIBUTING.md` before opening a PR.
-- Please follow `SECURITY.md` for vulnerability reports.
-- Please follow `CODE_OF_CONDUCT.md` in project discussions and reviews.
+## What It Does
 
-## Stand
+- Connect an existing Python web app with a guided wizard.
+- Start and stop a local Python process.
+- Detect external processes that already listen on a configured port.
+- Check health URLs and show runtime, Git and uptime status.
+- Pull app updates with Git and reinstall `requirements.txt`.
+- Create and control Windows services through WinSW.
+- Keep runtime files, logs and service tools outside the app-manager Git checkout.
 
-Der aktuelle Stand ist ein erster vertikaler Slice:
+## Install
 
-- Add-App-Wizard mit Validierung
-- JSON-basierte App-Registry
-- Dev-Prozessverwaltung fuer `uvicorn` und `waitress`
-- Observed-Modus fuer externe Prozesse ohne Start/Stop/Update
-- Health-Checks ueber HTTP
-- WinSW-XML-Erzeugung und Service-Command-Wrapper
-- WinSW-Suche und Download aus der App heraus
-- Einfache PySide6-Oberflaeche fuer Laden, Status, Logs und Kernaktionen
-
-## Start
-
-Ausfuehrliche Installationsschritte fuer Windows und Terminal Server stehen in `docs/INSTALL_WINDOWS.md`.
-
-Kurzinstallation aus GitHub mit `cmd.exe`:
+Open `cmd.exe` or PowerShell:
 
 ```bat
 cd /d C:\Python
-git clone https://github.com/cwecode/python-webapp-manager.git App_Manager
+git clone <REPOSITORY_URL> App_Manager
 cd App_Manager
 py -m venv .venv
-.venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-pip install -e .
+".venv\Scripts\python.exe" -m pip install --upgrade pip
+".venv\Scripts\python.exe" -m pip install -e .
 ".venv\Scripts\app-manager.exe"
 ```
 
-Spaetere Updates des App Managers koennen direkt in der App ueber `Workspace -> Update App Manager` gestartet werden.
+Replace `<REPOSITORY_URL>` with the GitHub URL of this repository or your fork.
 
-### Entwicklung
+## First Start
 
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
-.\.venv\Scripts\app-manager.exe
+On first start, choose a manager root. Recommended:
+
+```text
+C:\ProgramData\python-webapp-manager
 ```
 
-### Betrieb / Server
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-.\.venv\Scripts\app-manager.exe
-```
-
-Beim ersten Start fuehrt dich die App durch eine kurze Einrichtung fuer `apps_dir` und den zentralen Installationsordner unter `C:\ProgramData\python-webapp-manager`.
-Das ist absichtlich vom App-Manager-Code unter z. B. `C:\Python\App_Manager` getrennt:
-
-- `C:\Python\App_Manager` enthaelt Git-Clone, `.venv`, Source Code und Self-Update.
-- `C:\ProgramData\python-webapp-manager` enthaelt lokale App-Configs, Runtime-State, Tools und Logs.
-
-Clone den App Manager nicht direkt in den Manager-Root unter `C:\ProgramData\python-webapp-manager`, weil dieser Root als verwalteter Datenbereich behandelt wird.
-Die empfohlene Struktur ist ein einzelner Root-Ordner:
+The app creates this structure:
 
 ```text
 C:\ProgramData\python-webapp-manager\
@@ -76,49 +48,53 @@ C:\ProgramData\python-webapp-manager\
   logs\
 ```
 
-Im Setup waehlst du deshalb nur den Root-Ordner. Die Unterordner werden automatisch abgeleitet.
-Die App prueft dabei im Hintergrund, ob bereits eine WinSW-Installation in typischen Windows-Ordnern vorhanden ist.
-Fuer WinSW kannst du dann entweder den verwalteten Standardpfad unter `tools\` verwenden oder einen erkannten bzw. manuell ausgewaehlten Pfad uebernehmen.
-Bei Service-Aktionen kopiert die App WinSW pro Service in den jeweiligen Runtime-Ordner, z. B. als `demo-service.exe` neben `demo-service.xml`, weil WinSW EXE und XML mit gleichem Namen nebeneinander erwartet.
-Die lokale Maschinenkonfiguration wird als `configs/manager.json` erzeugt und ist bewusst nicht versioniert.
+Keep this separate from the Git clone, for example:
 
-Die App liest Konfigurationen aus `configs/apps/*.json`.
-Fuer ein oeffentliches Repo ist nur das Beispiel `configs/apps/example.app.json.example` versioniert.
-Lokale App-Configs bleiben bewusst unversioniert und muessen als eigene `*.json`-Dateien unter `configs/apps/` angelegt werden.
-Der Modus der Apps (`dev`, `prod`, `both`, `observed`) wird ueber die jeweilige App-Konfiguration gesteuert, nicht ueber `requirements*.txt`.
-Neue Apps werden primaer ueber `Add App` angebunden. `Scan Services` ist als Diagnose- und Uebernahmehilfe gedacht, z. B. fuer blockierte Ports oder laufende Altprozesse.
+```text
+C:\Python\App_Manager
+```
 
-## Konfigurationsformat
+Do not clone the App Manager directly into `C:\ProgramData\python-webapp-manager`; that directory is managed runtime data.
 
-Pflichtfelder pro App:
+## Connect An App
 
-- `id`
-- `display_name`
-- `mode`
-- `repo_path`
-- `branch`
-- `python_path`
-- `venv_path`
-- `entry_kind`
-- `entry_target`
-- `host`
-- `port`
-- `service_name`
-- `log_dir`
-- `winsw_exe_path`
-- `autostart_prod`
+1. Click `Connect App`.
+2. Select a template.
+3. Set the app repository path.
+4. Set Python/venv paths.
+5. Set host, port and optional health URL.
+6. Finish and save.
 
-Optionale Felder:
+Use `Find Running Apps` when an app is already running and you need to identify or stop the process that owns a port.
 
-- `health_url`
-- `env_file`
-- `requirements_file`
-- `init_command`
+## Runtime Modes
 
-## Hinweise
+- `dev`: App Manager starts a local Python process.
+- `prod`: App Manager controls a Windows service through WinSW.
+- `both`: Both options are configured, but only one should run on the same port at the same time.
+- `observed`: App Manager only observes health/port state and does not start, stop or update the app.
 
-- Zielplattform ist Windows.
-- Service-Management setzt WinSW und passende Rechte voraus.
-- Laufzeitdateien, Tools und Logs werden standardmaessig unter `C:\ProgramData\python-webapp-manager\` verwaltet.
-- Eine ausfuehrliche Windows-/Terminalserver-Installation steht in `docs/INSTALL_WINDOWS.md`.
-- Eine ausfuehrliche Anleitung zum Anbinden bestehender Apps steht in `docs/CONNECTING_APPS.md`.
+## Updates
+
+For connected apps, `Update App` runs:
+
+```bat
+git fetch --all --prune
+git checkout <branch>
+git pull --ff-only --autostash origin <branch>
+pip install -r requirements.txt
+```
+
+If an app was running, App Manager stops it before the update and starts it again afterwards when possible.
+
+## Important Files
+
+- `configs/manager.json.example`: example manager config.
+- `configs/manager.json`: local machine config, ignored by Git.
+- `configs/apps/*.json`: local connected app configs, ignored by Git.
+- `configs/apps/*.example.json`: example app configs that can be committed.
+
+## More Help
+
+- Windows install notes: `docs/INSTALL_WINDOWS.md`
+- Connecting apps: `docs/CONNECTING_APPS.md`

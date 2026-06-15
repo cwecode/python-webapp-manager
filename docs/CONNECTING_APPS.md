@@ -1,243 +1,119 @@
-# Connecting Python Web Apps
+# Connecting Apps
 
-This guide describes the recommended way to connect an existing Python web app to `python-webapp-manager`.
+This guide explains how to connect any local Python web app.
 
-## What App Manager Can Control
+## Basic Rule
 
-App Manager needs a reproducible start command. A listening port alone is useful for discovery, but it is not enough to reliably restart or update an app.
+App Manager needs a reproducible start command:
 
-Supported app shapes:
-
-- `uvicorn` for FastAPI, Starlette, and other ASGI apps
-- `waitress` for Flask and other WSGI apps on Windows
-- WinSW-backed Windows services for production-style service management
-
-## Minimal Requirements
-
-For a fully manageable app, provide:
-
-- project root path
-- Python interpreter path
-- virtual environment path
-- entry kind: `uvicorn` or `waitress`
-- entry target, for example `main:app`, `app.main:app`, or `wsgi:app`
-- host and port
-- optional health URL
-- optional requirements file
-- optional init command
-
-## Recommended Workflow
-
-Use `Add App` as the primary path.
-
-1. Enter the app basics: ID, display name, mode, host, port, and health URL.
-2. Enter the runtime paths: repo, branch, Python executable, venv, entry kind, and entry target.
-3. Enter service/log fields if you want `prod` or `both`.
-4. Finish the wizard. App Manager validates paths, importability, and port status before saving.
-
-Use `Scan Services` only as a helper when you need to inspect local listeners, find a blocked port, ignore noise, or attach a running non-service process so it can be stopped once.
-
-## Modes
-
-Use `dev` when App Manager should start and stop a normal Python process.
-
-Use `prod` when the app should be managed as a Windows service through WinSW.
-
-Use `both` only when you deliberately want both workflows for the same app.
-
-Use `observed` when you only want to document and observe an external process. Observed apps can show port and health status, but App Manager will not start, stop, update, or install services for them.
-
-## Recommended App Contract
-
-Keep the target app easy to manage by following this small contract:
-
-- Put the app in a Git repository.
-- Use a project-local virtual environment, usually `.venv`.
-- Provide `requirements.txt` for server installs.
-- Expose a health endpoint such as `/health`.
-- Keep secrets in `.env`, not in JSON configs.
-- Make the start command reproducible from the project root.
-
-FastAPI start example:
-
-```powershell
-C:\apps\demo-api\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8080
+```text
+repo path + Python/venv + entry target + host + port
 ```
 
-FastAPI health endpoint:
+A listening port alone is useful for discovery, but it is not enough to reliably restart or update an app.
 
-```python
-from fastapi import FastAPI
+## Connect A Normal Python App
 
-app = FastAPI()
+1. Click `Connect App`.
+2. Choose a template.
+3. Set `repo_path` to the app Git checkout.
+4. Set `python_path` to the venv Python executable.
+5. Set `venv_path` to the venv folder.
+6. Set `entry_kind` and `entry_target`.
+7. Set host, port and optional health URL.
+8. Finish the wizard.
 
+Common examples:
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+```text
+FastAPI / Uvicorn: entry_kind=uvicorn, entry_target=main:app
+Flask / Waitress:  entry_kind=waitress, entry_target=wsgi:app
 ```
 
-Flask/Waitress start example:
+## Runtime Modes
 
-```powershell
-C:\apps\demo-api\.venv\Scripts\waitress-serve.exe --host 0.0.0.0 --port 8080 wsgi:app
-```
+- `dev`: App Manager starts and stops a local Python process.
+- `prod`: App Manager controls a Windows service through WinSW.
+- `both`: Both options are configured, but only one should run on the same port at once.
+- `observed`: App Manager only watches health/port state.
 
-Flask health endpoint:
+Use `both` only when you intentionally want both management options. The UI prevents starting a process and service at the same time for the same app.
 
-```python
-from flask import Flask
+## Existing Running Apps
 
-app = Flask(__name__)
+Use `Find Running Apps` when an app is already running.
 
+Recommended takeover flow:
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-```
+1. Click `Find Running Apps`.
+2. Select the listener for the app port.
+3. Save the generated config.
+4. If needed, attach the current PID.
+5. Use `Stop App Process` or `Stop External Listener` to clear the port.
+6. Correct repo, Python, venv and entry fields.
+7. Start the app through App Manager.
 
-## WinSW
-
-WinSW is only needed for `prod` and `both`.
-
-Recommended setup:
-
-1. Open `Settings`.
-2. Choose the `python-webapp-manager` root directory.
-3. Let the app search for an existing WinSW executable.
-4. If none is found, click `Download WinSW`.
-5. Keep the managed default path under `tools\` unless your server already has a centrally managed WinSW binary.
-
-The app downloads the current release asset matching the machine architecture from the official WinSW GitHub releases.
-
-When a service action runs, App Manager writes `<service_name>.xml` into the app runtime directory and copies the configured WinSW executable there as `<service_name>.exe`.
-WinSW expects the executable and XML file to have the same base name and live next to each other.
-
-Run `Install Service` once before using `Start Service`, `Stop Service`, or `Restart Service`.
-If Windows reports that the service is not installed, App Manager treats the service as stopped and asks you to install it first.
-
-## Finding a Blocked Port
-
-Use `Scan Services` when you need to identify what is blocking a port.
-
-Workflow:
-
-1. Start `python-webapp-manager` on the server.
-2. Click `Scan Services`.
-3. Sort the table by `Port`.
-4. Select the row for the blocked port.
-5. Review the detected PID, process, executable path, and service name.
-
-If the process is not a Windows service, the scan dialog can attach the current PID.
-When attached, `Stop Dev` can stop that running process through App Manager.
-
-This is intended for takeover and cleanup of an existing process. After that, fill in the real project paths and entry target so App Manager can start it again later.
-
-## Importing From Scan
-
-The scan can prefill a config, but some fields must still be reviewed.
-
-Fields that are usually reliable:
-
-- `host`
-- `port`
-- `pid`
-- process name
-- executable path
-- Windows service name, when detected
-
-Fields that often need manual correction:
-
-- `repo_path`
-- `python_path`
-- `venv_path`
-- `entry_kind`
-- `entry_target`
-- `health_url`
-
-Use `Attach current PID so Stop Dev can stop this running process` only when you want App Manager to take over the current process for stopping. This does not magically reconstruct the original start command.
+Only stop external listeners when you are sure the PID belongs to the app you want to manage.
 
 ## Health Checks
 
-A health endpoint makes the UI much more useful.
-
-Recommended response:
-
-```json
-{"status": "ok"}
-```
-
-Recommended URL:
+The health URL is optional but recommended:
 
 ```text
-http://127.0.0.1:8080/health
+http://127.0.0.1:8000/health
 ```
 
-Bind the app to `0.0.0.0` when it should accept network traffic, but use `127.0.0.1` in the health URL when App Manager runs on the same server.
+The status cards refresh automatically. `Recheck Health` runs the health check immediately.
 
-## Updates
+## Git Updates
 
-For GitHub-backed updates, see `docs/INSTALL_WINDOWS.md` for the full server setup and private repository authentication workflow.
+`Update App` expects:
 
-The update action expects:
+- `repo_path` is a Git repository.
+- `branch` exists.
+- `python_path` exists.
+- `requirements.txt` exists or is configured when dependencies should be installed.
 
-- `repo_path` is a Git repository
-- `branch` exists
-- `python_path` exists
-- `requirements_file` exists or `repo_path\requirements.txt` exists
-
-Update performs:
-
-1. stop active runtime, if App Manager knows one is active
-2. `git fetch --all --prune`
-3. `git checkout <branch>`
-4. `git pull --ff-only --autostash origin <branch>`
-5. `pip install -r requirements.txt`, if present
-6. optional init command
-7. restart the previously active runtime
-
-If the working tree has local changes, Git temporarily stashes them with `--autostash` and applies them again after the pull.
-If Git reports a conflict, resolve it in the app repository and run Update again.
-
-Typical dirty files are generated runtime data such as:
-
-- `data/*.json`
-- `*.log`
-- local exports
-- report recipient lists
-- uploaded/generated files
-
-Best practice: keep mutable app data outside the Git checkout, for example under `C:\ProgramData\<your-app>`, or add generated files to `.gitignore`.
-If such files are already tracked by Git, `.gitignore` alone is not enough. Remove them from tracking once and commit that cleanup:
+Update runs:
 
 ```bat
-git rm --cached data\voortman_pipes.json
-git rm --cached data\voortman_pipes_archived.json
-git rm --cached data\xml_export_counter.json
+git fetch --all --prune
+git checkout <branch>
+git pull --ff-only --autostash origin <branch>
+pip install -r requirements.txt
+```
+
+Local changes are temporarily stashed by Git during pull. If Git reports a conflict, resolve it in the app repository and run the update again.
+
+## Runtime Data
+
+Keep mutable runtime data outside the Git checkout whenever possible:
+
+```text
+C:\ProgramData\<your-app>\data
+C:\ProgramData\<your-app>\uploads
+C:\ProgramData\<your-app>\logs
+```
+
+If an app writes generated files into the Git checkout, add those files to the app repository's `.gitignore`.
+
+If generated files are already tracked by Git, remove them from tracking once:
+
+```bat
+git rm --cached path\to\generated-file.json
 git commit -m "Stop tracking generated runtime data"
 ```
 
-Only do this for files that are truly generated/local runtime data and should not come from GitHub.
+Only do this for files that are truly generated/local runtime data.
 
-## Practical Server Takeover
+## Windows Services
 
-When an old Python server is stuck on a port:
+For service mode:
 
-1. Scan services.
-2. Sort by port.
-3. Select the blocked port.
-4. Save the config with attach enabled.
-5. Use `Stop Dev` to stop the attached PID.
-6. Correct `repo_path`, `python_path`, `venv_path`, and `entry_target`.
-7. Use `Start Dev` to start the app through App Manager.
-8. Add a health URL and verify with `Check Health`.
+1. Configure `mode=prod` or `mode=both`.
+2. Set `service_name`.
+3. Set or download WinSW.
+4. Click `Install Service`.
+5. Use `Start Service`, `Stop Service`, or `Restart Service`.
 
-After that, the app is manageable through the normal App Manager flow.
-
-For an app that is already configured but still has an external process listening on its port:
-
-1. Select the app.
-2. Confirm the status detail shows an external PID listening on the configured host and port.
-3. Click `Stop External PID` to force-stop that process.
-4. For service mode, click `Install Service` once.
-5. Then use `Start Service`, `Stop Service`, or `Restart Service` normally.
+Some service actions require Administrator rights.

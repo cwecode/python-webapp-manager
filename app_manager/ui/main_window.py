@@ -47,6 +47,7 @@ from app_manager.ui.app_config_dialog import AppConfigDialog
 from app_manager.ui.discovery_dialog import DiscoveryDialog
 from app_manager.ui.log_viewer import LogViewer
 from app_manager.ui.manager_settings_dialog import ManagerSettingsDialog
+from app_manager.ui.theme import apply_dialog_style
 
 
 @dataclass
@@ -218,7 +219,7 @@ class MainWindow(QMainWindow):
         self.detail_layout.setLabelAlignment(Qt.AlignLeft)
         right_layout.addWidget(detail_group)
 
-        app_actions = QGroupBox("Run Controls")
+        app_actions = QGroupBox("App Process Controls")
         app_actions.setObjectName("surface")
         app_action_grid = QGridLayout(app_actions)
         app_action_grid.setContentsMargins(12, 14, 12, 12)
@@ -226,7 +227,7 @@ class MainWindow(QMainWindow):
         app_action_grid.setVerticalSpacing(8)
         right_layout.addWidget(app_actions)
 
-        service_actions = QGroupBox("Service Controls")
+        service_actions = QGroupBox("Windows Service Controls")
         service_actions.setObjectName("surface")
         service_action_grid = QGridLayout(service_actions)
         service_action_grid.setContentsMargins(12, 14, 12, 12)
@@ -255,22 +256,25 @@ class MainWindow(QMainWindow):
         self.edit_app_button.clicked.connect(self.edit_app)
         settings_grid.addWidget(self.edit_app_button, 0, 2)
 
-        self.start_button = QPushButton("Start Dev")
+        self.start_button = QPushButton("Start App Process")
+        self.start_button.setToolTip("Start the app as a local Python process managed by App Manager.")
         self.start_button.clicked.connect(self.start_dev)
         app_action_grid.addWidget(self.start_button, 0, 0)
 
-        self.stop_button = QPushButton("Stop Dev")
+        self.stop_button = QPushButton("Stop App Process")
+        self.stop_button.setToolTip("Stop the local Python process started or attached by App Manager.")
         self.stop_button.clicked.connect(self.stop_dev)
         app_action_grid.addWidget(self.stop_button, 0, 1)
 
-        self.stop_external_button = QPushButton("Stop External PID")
-        self.stop_external_button.setToolTip("Force stop the process currently listening on this app's configured port.")
-        self.stop_external_button.clicked.connect(self.stop_external_process)
-        app_action_grid.addWidget(self.stop_external_button, 2, 0, 1, 2)
-
-        self.restart_button = QPushButton("Restart Dev")
+        self.restart_button = QPushButton("Restart App Process")
+        self.restart_button.setToolTip("Stop and start the local Python process again.")
         self.restart_button.clicked.connect(self.restart_dev)
-        service_action_grid.addWidget(self.restart_button, 0, 0)
+        app_action_grid.addWidget(self.restart_button, 0, 2)
+
+        self.stop_external_button = QPushButton("Stop External Listener")
+        self.stop_external_button.setToolTip("Force stop an unmanaged process currently listening on this app's configured port.")
+        self.stop_external_button.clicked.connect(self.stop_external_process)
+        app_action_grid.addWidget(self.stop_external_button, 2, 0, 1, 3)
 
         self.install_service_button = QPushButton("Install Service")
         self.install_service_button.clicked.connect(self.install_service)
@@ -292,13 +296,15 @@ class MainWindow(QMainWindow):
         self.restart_service_button.clicked.connect(self.restart_service)
         service_action_grid.addWidget(self.restart_service_button, 0, 1)
 
-        self.health_button = QPushButton("Check Health")
+        self.health_button = QPushButton("Recheck Health")
+        self.health_button.setToolTip("Run the health check immediately instead of waiting for the next refresh.")
         self.health_button.clicked.connect(self.check_health)
         app_action_grid.addWidget(self.health_button, 1, 0)
 
-        self.update_button = QPushButton("Update")
+        self.update_button = QPushButton("Update App")
+        self.update_button.setToolTip("Pull the selected app from GitHub and restart the active runtime when needed.")
         self.update_button.clicked.connect(self.update_app)
-        app_action_grid.addWidget(self.update_button, 1, 1)
+        app_action_grid.addWidget(self.update_button, 1, 1, 1, 2)
 
         self.open_logs_button = QPushButton("Open Logs")
         self.open_logs_button.clicked.connect(self.open_logs)
@@ -462,22 +468,22 @@ class MainWindow(QMainWindow):
         self._finish_pending_close()
 
     def start_dev(self) -> None:
-        self._run_selected_action("Start Dev", self.controller.start_dev)
+        self._run_selected_action("Start App Process", self.controller.start_dev)
 
     def stop_dev(self) -> None:
-        self._run_selected_action("Stop Dev", self.controller.stop_dev)
+        self._run_selected_action("Stop App Process", self.controller.stop_dev)
 
     def restart_dev(self) -> None:
-        self._run_selected_action("Restart Dev", self.controller.restart_dev)
+        self._run_selected_action("Restart App Process", self.controller.restart_dev)
 
     def stop_external_process(self) -> None:
-        self._run_selected_action("Stop External PID", self.controller.stop_external_process)
+        self._run_selected_action("Stop External Listener", self.controller.stop_external_process)
 
     def check_health(self) -> None:
-        self._run_selected_action("Check Health", self.controller.check_health)
+        self._run_selected_action("Recheck Health", self.controller.check_health)
 
     def update_app(self) -> None:
-        self._run_selected_action("Update", self.controller.update_app)
+        self._run_selected_action("Update App", self.controller.update_app)
 
     def install_service(self) -> None:
         self._run_selected_action("Install Service", self.controller.install_service)
@@ -819,7 +825,7 @@ pause
 
         details = {
             "Address": f"{config.host}:{config.port}",
-            "Mode": f"{config.mode} / active {snapshot.active_mode}",
+            "Mode": f"{_mode_label(config.mode)} / active {_active_mode_label(snapshot.active_mode)}",
             "Repo": str(config.repo_path),
             "Branch": config.branch,
             "Entry": f"{config.entry_kind} {config.entry_target}",
@@ -951,7 +957,7 @@ pause
                 button.setEnabled(False)
             self.add_app_button.setEnabled(True)
             self.edit_app_button.setEnabled(False)
-            self.update_button.setText("Update")
+            self.update_button.setText("Update App")
             self.update_button.setToolTip("")
             _set_button_role(self.update_button, "secondary")
             self.scan_button.setEnabled(self._scan_thread is None)
@@ -971,13 +977,13 @@ pause
         self.open_app_button.setEnabled(True)
         self.start_button.setEnabled(dev_supported and not runtime_active)
         self.stop_button.setEnabled(snapshot.active_mode == "dev")
-        self.stop_external_button.setEnabled(dev_supported and external_active)
+        self.stop_external_button.setEnabled(not observed and external_active)
         self.restart_button.setEnabled(snapshot.active_mode == "dev")
         self.install_service_button.setEnabled(prod_supported)
         self.uninstall_service_button.setEnabled(prod_supported)
         self.start_service_button.setEnabled(prod_supported and not runtime_active)
-        self.stop_service_button.setEnabled(prod_supported)
-        self.restart_service_button.setEnabled(prod_supported)
+        self.stop_service_button.setEnabled(snapshot.active_mode == "prod")
+        self.restart_service_button.setEnabled(snapshot.active_mode == "prod")
         self.health_button.setEnabled(True)
         self.update_button.setEnabled(not observed)
         if snapshot.git_state == "update_available":
@@ -985,11 +991,11 @@ pause
             self.update_button.setToolTip(snapshot.git_detail)
             _set_button_role(self.update_button, "warning")
         elif snapshot.git_state in {"dirty", "error"}:
-            self.update_button.setText("Update")
+            self.update_button.setText("Update App")
             self.update_button.setToolTip(snapshot.git_detail if snapshot.git_state != "unknown" else "")
             _set_button_role(self.update_button, "danger")
         else:
-            self.update_button.setText("Update")
+            self.update_button.setText("Update App")
             self.update_button.setToolTip(snapshot.git_detail if snapshot.git_state != "unknown" else "")
             _set_button_role(self.update_button, "secondary")
         self.open_logs_button.setEnabled(True)
@@ -1140,8 +1146,28 @@ def _git_label(git_state: str) -> str:
 
 def _runtime_label(snapshot: AppSnapshot) -> str:
     if snapshot.active_mode != "none":
-        return f"{snapshot.status} / {snapshot.active_mode}"
+        return f"{snapshot.status} / {_active_mode_label(snapshot.active_mode)}"
     return snapshot.status
+
+
+def _mode_label(mode: str) -> str:
+    labels = {
+        "dev": "local process",
+        "prod": "Windows service",
+        "both": "local process or Windows service",
+        "observed": "observed only",
+    }
+    return labels.get(mode, mode)
+
+
+def _active_mode_label(active_mode: str) -> str:
+    labels = {
+        "dev": "local process",
+        "prod": "Windows service",
+        "unknown": "external listener",
+        "none": "none",
+    }
+    return labels.get(active_mode, active_mode)
 
 
 def _uptime_label(started_at: str | None) -> str:
@@ -1232,6 +1258,7 @@ def _show_github_help(parent: QWidget) -> None:
     dialog = QDialog(parent)
     dialog.setWindowTitle("GitHub and update checks")
     dialog.resize(760, 620)
+    apply_dialog_style(dialog)
 
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(14, 14, 14, 14)

@@ -17,7 +17,7 @@ dev = [
     "pytest>=8.2,<9",
 ]
 
-[project.scripts]
+[project.gui-scripts]
 app-manager = "app_manager.app:main"
 
 [tool.pytest.ini_options]

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from app_manager.core.subprocess_utils import run_capture
 from app_manager.models.manager import recommended_winsw_filename
 
 ShellRunner = Callable[[str], str]
@@ -112,18 +112,13 @@ class WinSWDetector:
             "$OutputEncoding = [Console]::OutputEncoding; "
             f"{script}"
         )
-        result = subprocess.run(
+        result = run_capture(
             ["powershell", "-NoProfile", "-Command", command],
-            capture_output=True,
-            text=False,
-            check=False,
         )
-        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
-        stderr = (result.stderr or b"").decode("utf-8", errors="replace")
         if result.returncode != 0:
-            message = stderr.strip() or stdout.strip() or "WinSW discovery command failed"
+            message = result.stderr.strip() or result.stdout.strip() or "WinSW discovery command failed"
             raise OSError(message)
-        return stdout
+        return result.stdout
 
 
 def _discovery_script(install_dir: Path, env: dict[str, str]) -> str:

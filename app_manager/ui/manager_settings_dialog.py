@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from app_manager.core.winsw import WinSWDetector, download_winsw
 from app_manager.models import ConfigValidationError, ManagerConfig
 from app_manager.models.manager import recommended_winsw_filename
+from app_manager.ui.theme import apply_dialog_style
 
 
 class WinSWDetectWorker(QObject):
@@ -82,13 +83,18 @@ class ManagerSettingsDialog(QDialog):
 
         self.setWindowTitle("Initial Setup" if setup_mode else "Settings")
         self.resize(840, 420)
+        apply_dialog_style(self)
 
         root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(14, 14, 14, 14)
+        root_layout.setSpacing(10)
         intro = QLabel("Choose one manager root. App configs, runtime files, tools, and logs stay below it.")
+        intro.setObjectName("dialogIntro")
         intro.setWordWrap(True)
         root_layout.addWidget(intro)
 
         platform_hint = QLabel(f"Machine: {platform.machine() or 'unknown'} | WinSW: {recommended_winsw_filename()}")
+        platform_hint.setObjectName("dialogHint")
         platform_hint.setWordWrap(True)
         root_layout.addWidget(platform_hint)
 

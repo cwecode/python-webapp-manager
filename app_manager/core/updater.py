@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 import time
 from pathlib import Path
 
@@ -29,8 +28,7 @@ class AppUpdater:
         dirty = self._run(["git", "status", "--porcelain"], cwd=config.repo_path)
         if not dirty.ok:
             return "error", dirty.message
-        if dirty.message.strip():
-            return "dirty", "working tree has local changes"
+        has_local_changes = bool(dirty.message.strip())
 
         if fetch and self._should_fetch(config):
             fetched = self._run(["git", "fetch", "origin", config.branch, "--prune"], cwd=config.repo_path)
@@ -51,7 +49,12 @@ class AppUpdater:
         except ValueError:
             return "unknown", counts.message or "could not compare with remote"
         if behind > 0:
-            return "update_available", f"{behind} commit(s) behind {upstream}"
+            detail = f"{behind} commit(s) behind {upstream}"
+            if has_local_changes:
+                detail = f"{detail}; local changes will be autostashed during update"
+            return "update_available", detail
+        if has_local_changes:
+            return "dirty", f"working tree has local changes; up to date with {upstream}"
         if ahead > 0:
             return "current", f"{ahead} local commit(s) ahead of {upstream}"
         return "current", f"up to date with {upstream}"

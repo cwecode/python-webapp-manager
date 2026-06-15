@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from app_manager.core.subprocess_utils import run_capture
 from app_manager.models import DiscoveredApp
 
 ShellRunner = Callable[[str], Optional[str]]
@@ -196,18 +196,13 @@ class WindowsAppDiscovery:
             "$OutputEncoding = [Console]::OutputEncoding; "
             f"{script}"
         )
-        result = subprocess.run(
+        result = run_capture(
             ["powershell", "-NoProfile", "-Command", command],
-            capture_output=True,
-            text=False,
-            check=False,
         )
-        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
-        stderr = (result.stderr or b"").decode("utf-8", errors="replace")
         if result.returncode != 0:
-            message = stderr.strip() or stdout.strip() or "discovery command failed"
+            message = result.stderr.strip() or result.stdout.strip() or "discovery command failed"
             raise OSError(message)
-        return stdout
+        return result.stdout
 
 
 def _match_service(services: list[dict[str, Any]], executable_path: Path | None) -> dict[str, Any]:

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from app_manager.core.config_checks import validate_app_config
 from app_manager.models import AppConfig, ConfigValidationError, ManagerConfig
+from app_manager.ui.theme import MESSAGE_BOX_STYLESHEET
 
 
 APP_PRESETS = {
@@ -72,7 +73,9 @@ class AppConfigDialog(QWizard):
 
         self.setWindowTitle("Edit App" if existing_config is not None else "Add App")
         self.resize(900, 640)
-        self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
+        # ModernStyle paints native white chrome on Windows; ClassicStyle keeps
+        # the whole wizard under our stylesheet.
+        self.setWizardStyle(QWizard.WizardStyle.ClassicStyle)
         self.setStyleSheet(
             """
             QWizard {
@@ -505,7 +508,7 @@ def _mode_hint(mode: str) -> str:
     hints = {
         "dev": "App Manager starts a normal local Python process.",
         "prod": "Windows service through WinSW.",
-        "both": "Dev process and Windows service are both available.",
+        "both": "Local app process and Windows service are both available. Only one should run at a time on the same port.",
         "observed": "Shows status only; no start, stop, update, or service actions.",
     }
     return hints.get(mode, "Unknown mode.")
@@ -531,27 +534,5 @@ def _confirm_validation_warnings(parent: QWidget, warnings: list[str]) -> bool:
     message.setInformativeText("\n".join(f"- {warning}" for warning in warnings) + "\n\nSave anyway?")
     message.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     message.setDefaultButton(QMessageBox.StandardButton.No)
-    message.setStyleSheet(
-        """
-        QMessageBox {
-            background-color: #f8fafc;
-        }
-        QMessageBox QLabel {
-            color: #111827;
-            min-width: 360px;
-        }
-        QMessageBox QPushButton {
-            min-width: 72px;
-            min-height: 30px;
-            padding: 4px 12px;
-            border: 1px solid #1d4ed8;
-            border-radius: 6px;
-            background-color: #2563eb;
-            color: #ffffff;
-        }
-        QMessageBox QPushButton:hover {
-            background-color: #1d4ed8;
-        }
-        """
-    )
+    message.setStyleSheet(MESSAGE_BOX_STYLESHEET)
     return message.exec() == QMessageBox.StandardButton.Yes

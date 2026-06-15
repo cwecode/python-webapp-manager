@@ -105,11 +105,38 @@ def test_check_status_reports_dirty_working_tree(monkeypatch, tmp_path: Path) ->
             return ActionResult(True, "true")
         if command[:3] == ["git", "status", "--porcelain"]:
             return ActionResult(True, " M app.py")
+        if command[:2] == ["git", "fetch"]:
+            return ActionResult(True, "fetched")
+        if command[:3] == ["git", "rev-list", "--left-right"]:
+            return ActionResult(True, "0\t0")
         return ActionResult(False, "unexpected command")
 
     monkeypatch.setattr(updater, "_run", fake_run)
 
-    assert updater.check_status(config) == ("dirty", "working tree has local changes")
+    assert updater.check_status(config) == ("dirty", "working tree has local changes; up to date with origin/main")
+
+
+def test_check_status_reports_update_available_even_with_local_changes(monkeypatch, tmp_path: Path) -> None:
+    updater = AppUpdater()
+    config = _make_config(tmp_path)
+
+    def fake_run(command: list[str], cwd: Path) -> ActionResult:
+        if command[:2] == ["git", "rev-parse"]:
+            return ActionResult(True, "true")
+        if command[:3] == ["git", "status", "--porcelain"]:
+            return ActionResult(True, " M app.py")
+        if command[:2] == ["git", "fetch"]:
+            return ActionResult(True, "fetched")
+        if command[:3] == ["git", "rev-list", "--left-right"]:
+            return ActionResult(True, "0\t2")
+        return ActionResult(False, "unexpected command")
+
+    monkeypatch.setattr(updater, "_run", fake_run)
+
+    assert updater.check_status(config) == (
+        "update_available",
+        "2 commit(s) behind origin/main; local changes will be autostashed during update",
+    )
 
 
 def test_check_status_caches_remote_fetch(monkeypatch, tmp_path: Path) -> None:
