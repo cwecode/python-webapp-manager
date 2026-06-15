@@ -523,6 +523,7 @@ class MainWindow(QMainWindow):
         root_dir = self.installation_manager.base_dir
         venv_python = root_dir / ".venv" / "Scripts" / "python.exe"
         venv_app_manager = root_dir / ".venv" / "Scripts" / "app-manager.exe"
+        update_script = root_dir / "update-app-manager.cmd"
         if not (root_dir / ".git").exists():
             self._show_error("Update App Manager", f"App Manager root is not a Git repository:\n{root_dir}")
             return
@@ -539,15 +540,36 @@ class MainWindow(QMainWindow):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        command = (
-            f'cd /d "{root_dir}" '
-            f'&& git pull '
-            f'&& "{venv_python}" -m pip install -e . '
-            f'&& "{venv_app_manager}"'
-        )
+        script = f"""@echo off
+title Update App Manager
+cd /d "{root_dir}"
+echo Updating App Manager in {root_dir}
+echo.
+echo [1/3] Pulling latest version from GitHub...
+git pull
+if errorlevel 1 goto failed
+echo.
+echo [2/3] Reinstalling package in .venv...
+"{venv_python}" -m pip install -e .
+if errorlevel 1 goto failed
+echo.
+echo [3/3] Starting App Manager...
+start "" "{venv_app_manager}"
+echo.
+echo Update finished. You can close this window.
+goto end
+
+:failed
+echo.
+echo Update failed. Check the error above.
+pause
+
+:end
+"""
         try:
+            update_script.write_text(script, encoding="utf-8")
             subprocess.Popen(
-                ["cmd.exe", "/k", command],
+                ["cmd.exe", "/k", str(update_script)],
                 cwd=root_dir,
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
             )

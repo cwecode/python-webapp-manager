@@ -152,6 +152,7 @@ Workspace -> Update App Manager
 ```
 
 This opens a `cmd.exe` window, updates the App Manager repository, reinstalls the package in `.venv`, and starts App Manager again.
+The app writes and runs `update-app-manager.cmd` in the App Manager directory so the command window can show each update step and any errors.
 
 It expects that App Manager was installed from GitHub into a real Git clone and that `.venv\Scripts\python.exe` exists.
 

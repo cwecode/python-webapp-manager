@@ -78,6 +78,7 @@ class ManagerSettingsDialog(QDialog):
         self._download_worker: WinSWDownloadWorker | None = None
         self._detected_winsw_paths: list[Path] = []
         self._close_requested = False
+        self._reject_requested = False
 
         self.setWindowTitle("Initial Setup" if setup_mode else "Settings")
         self.resize(840, 420)
@@ -170,11 +171,21 @@ class ManagerSettingsDialog(QDialog):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._background_running():
             self._close_requested = True
+            self._reject_requested = False
             self.setEnabled(False)
             self.winsw_status_label.setText("Waiting for the current WinSW background task to finish before closing...")
             event.ignore()
             return
         super().closeEvent(event)
+
+    def reject(self) -> None:  # type: ignore[override]
+        if self._background_running():
+            self._reject_requested = True
+            self._close_requested = False
+            self.setEnabled(False)
+            self.winsw_status_label.setText("Waiting for the current WinSW background task to finish before closing...")
+            return
+        super().reject()
 
     def _save(self) -> None:
         try:
@@ -382,6 +393,12 @@ class ManagerSettingsDialog(QDialog):
         return self._detect_thread is not None or self._download_thread is not None
 
     def _finish_pending_close(self) -> None:
-        if not self._close_requested or self._background_running():
+        if self._background_running():
             return
-        self.close()
+        if self._reject_requested:
+            self._reject_requested = False
+            super().reject()
+            return
+        if self._close_requested:
+            self._close_requested = False
+            self.close()
