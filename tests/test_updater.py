@@ -53,7 +53,24 @@ def test_updater_blocks_dirty_working_tree(monkeypatch, tmp_path: Path) -> None:
     assert result.ok is False
     assert "working tree is dirty; update aborted before stopping the runtime" in result.message
     assert "M app.py" in result.message
+    assert "running app was left untouched" in result.message
+    assert "git rm --cached" in result.message
     assert commands == [["git", "status", "--porcelain"]]
+
+
+def test_check_update_preconditions_accepts_empty_git_status_output(monkeypatch, tmp_path: Path) -> None:
+    updater = AppUpdater()
+    config = _make_config(tmp_path)
+
+    def fake_run_capture(command: list[str], cwd: Path):
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("app_manager.core.updater.run_capture", fake_run_capture)
+
+    result = updater.check_update_preconditions(config)
+
+    assert result.ok is True
+    assert result.message == "update preconditions ok"
 
 
 def test_check_status_reports_update_available(monkeypatch, tmp_path: Path) -> None:

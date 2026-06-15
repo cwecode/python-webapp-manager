@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -114,7 +115,7 @@ class ProcessRunner:
 
         result = run_capture(["taskkill", "/F", "/PID", str(pid), "/T"])
         if result.returncode != 0:
-            return ActionResult(False, result.stderr.strip() or result.stdout.strip() or f"failed to stop PID {pid}")
+            return ActionResult(False, self._format_stop_failure(pid, result.stdout, result.stderr))
         return ActionResult(True, f"force stopped external PID {pid}")
 
     def get_status(self, config: AppConfig) -> tuple[RuntimeStatus, str]:
@@ -220,6 +221,80 @@ class ProcessRunner:
             return [item for item in payload if isinstance(item, dict)]
         return []
 
+    def _format_stop_failure(self, target_pid: int, stdout: str, stderr: str) -> str:
+        raw_message = (stderr.strip() or stdout.strip() or f"failed to stop PID {target_pid}").strip()
+        mentioned_pids = _extract_pids(raw_message)
+        pids_to_describe = [target_pid]
+        for pid in mentioned_pids:
+            if pid != target_pid and pid not in pids_to_describe:
+                pids_to_describe.append(pid)
+
+        diagnostics = [self._describe_process(pid) for pid in pids_to_describe[:4]]
+        diagnostics = [item for item in diagnostics if item]
+
+        hint = ""
+        if _looks_like_access_denied(raw_message):
+            hint = (
+                "\nHint: Windows denied termination. Start App Manager as Administrator, "
+                "or stop the owning Windows service/user session first."
+            )
+
+        details = "\n".join(diagnostics)
+        if details:
+            return f"{raw_message}\n\nProcess context:\n{details}{hint}"
+        return f"{raw_message}{hint}"
+
+    def _describe_process(self, pid: int) -> str:
+        if pid <= 0:
+            return ""
+        script = (
+            f"$targetPid = {pid}; "
+            "$process = Get-CimInstance Win32_Process -Filter \"ProcessId = $targetPid\" -ErrorAction SilentlyContinue; "
+            "if ($null -eq $process) { return }; "
+            "$owner = $null; "
+            "try { "
+            "$ownerResult = Invoke-CimMethod -InputObject $process -MethodName GetOwner -ErrorAction SilentlyContinue; "
+            "if ($ownerResult.User) { "
+            "if ($ownerResult.Domain) { $owner = \"$($ownerResult.Domain)\\$($ownerResult.User)\" } "
+            "else { $owner = $ownerResult.User } "
+            "} "
+            "} catch { $owner = $null }; "
+            "$service = Get-CimInstance Win32_Service -Filter \"ProcessId = $targetPid\" -ErrorAction SilentlyContinue | "
+            "Select-Object -First 1 Name,DisplayName,State; "
+            "[pscustomobject]@{ "
+            "Pid = $process.ProcessId; "
+            "Name = $process.Name; "
+            "ParentPid = $process.ParentProcessId; "
+            "Owner = $owner; "
+            "ServiceName = $service.Name; "
+            "ServiceDisplayName = $service.DisplayName; "
+            "ServiceState = $service.State "
+            "} | ConvertTo-Json -Compress"
+        )
+        command = (
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+            "$OutputEncoding = [Console]::OutputEncoding; "
+            f"{script}"
+        )
+        result = run_capture(["powershell", "-NoProfile", "-Command", command])
+        if result.returncode != 0 or not result.stdout.strip():
+            return ""
+        try:
+            payload = json.loads(result.stdout.lstrip("\ufeff"))
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(payload, dict):
+            return ""
+
+        name = str(payload.get("Name") or "unknown")
+        owner = str(payload.get("Owner") or "unknown owner")
+        parent_pid = _to_int(payload.get("ParentPid"))
+        service_name = str(payload.get("ServiceName") or "")
+        service_state = str(payload.get("ServiceState") or "")
+        service = f", service={service_name} ({service_state})" if service_name else ""
+        parent = f", parent PID {parent_pid}" if parent_pid > 0 else ""
+        return f"- PID {pid}: {name}, owner={owner}{parent}{service}"
+
 
 def _to_int(value: object) -> int:
     try:
@@ -236,3 +311,17 @@ def _address_matches(config_host: str, listener_address: str) -> bool:
     if host in {"127.0.0.1", "localhost", "::1"}:
         return address in {"127.0.0.1", "localhost", "::1", "0.0.0.0", "::"}
     return address == host or address in {"0.0.0.0", "::"}
+
+
+def _extract_pids(message: str) -> list[int]:
+    pids: list[int] = []
+    for match in re.finditer(r"\bPID\s+(\d+)\b", message, flags=re.IGNORECASE):
+        pid = _to_int(match.group(1))
+        if pid > 0 and pid not in pids:
+            pids.append(pid)
+    return pids
+
+
+def _looks_like_access_denied(message: str) -> bool:
+    normalized = message.lower()
+    return "access is denied" in normalized or "zugriff verweigert" in normalized

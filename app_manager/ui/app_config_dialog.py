@@ -88,6 +88,14 @@ class AppConfigDialog(QWizard):
             QWizard QLabel {
                 color: #dce4ed;
             }
+            QWizard QLabel#wizardPageTitle {
+                color: #f7fafc;
+                font-size: 18px;
+                font-weight: 700;
+            }
+            QWizard QLabel#wizardPageSubtitle {
+                color: #94a3b8;
+            }
             QWizard QLineEdit,
             QWizard QComboBox,
             QWizard QSpinBox {
@@ -174,11 +182,27 @@ class AppConfigDialog(QWizard):
         self._selected_config = config
         super().accept()
 
-    def _basics_page(self) -> QWizardPage:
+    def _new_page(self, title: str, subtitle: str) -> tuple[QWizardPage, QVBoxLayout]:
         page = QWizardPage()
-        page.setTitle("Start")
-        page.setSubTitle("Pick a template, then adjust only what differs.")
-        layout = QFormLayout(page)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(22, 18, 22, 18)
+        layout.setSpacing(12)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("wizardPageTitle")
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setObjectName("wizardPageSubtitle")
+        subtitle_label.setWordWrap(True)
+
+        layout.addWidget(title_label)
+        layout.addWidget(subtitle_label)
+        layout.addSpacing(6)
+        return page, layout
+
+    def _basics_page(self) -> QWizardPage:
+        page, root_layout = self._new_page("Start", "Pick a template, then adjust only what differs.")
+        layout = QFormLayout()
+        root_layout.addLayout(layout)
         self._add_combo(layout, "template", "Template", list(APP_PRESETS))
         self._combo_box("template").currentTextChanged.connect(self._apply_preset)
         self._add_line(layout, "id", "ID")
@@ -195,10 +219,9 @@ class AppConfigDialog(QWizard):
         return page
 
     def _runtime_page(self) -> QWizardPage:
-        page = QWizardPage()
-        page.setTitle("Runtime")
-        page.setSubTitle("Select the project folder and Python environment.")
-        layout = QFormLayout(page)
+        page, root_layout = self._new_page("Runtime", "Select the project folder and Python environment.")
+        layout = QFormLayout()
+        root_layout.addLayout(layout)
         self._add_path_line(layout, "repo_path", "Repo path", "folder")
         self._add_line(layout, "branch", "Branch")
         self._add_path_line(layout, "python_path", "Python path", "file", "Python (*.exe);;All files (*)")
@@ -215,10 +238,9 @@ class AppConfigDialog(QWizard):
         return page
 
     def _service_page(self) -> QWizardPage:
-        page = QWizardPage()
-        page.setTitle("Service and Logs")
-        page.setSubTitle("Only needed for prod or both mode.")
-        layout = QFormLayout(page)
+        page, root_layout = self._new_page("Service and Logs", "Only needed for prod or both mode.")
+        layout = QFormLayout()
+        root_layout.addLayout(layout)
         self._add_line(layout, "service_name", "Service name")
         self._add_path_line(layout, "log_dir", "Log dir", "folder")
         self._add_path_line(layout, "winsw_exe_path", "WinSW exe path", "file", "Executable (*.exe);;All files (*)")
@@ -226,10 +248,7 @@ class AppConfigDialog(QWizard):
         return page
 
     def _review_page(self) -> QWizardPage:
-        page = QWizardPage()
-        page.setTitle("Review")
-        page.setSubTitle("Finish validates the config before saving.")
-        layout = QVBoxLayout(page)
+        page, layout = self._new_page("Review", "Finish validates the config before saving.")
         self._review_label = QLabel()
         self._review_label.setWordWrap(True)
         layout.addWidget(self._review_label)

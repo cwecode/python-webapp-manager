@@ -17,12 +17,14 @@ def test_discovery_merges_listener_process_and_service() -> None:
                 {"LocalAddress": "127.0.0.1", "LocalPort": 8000, "OwningProcess": 1234},
             ]
         ),
-        "Get-Process": json.dumps(
+        "Win32_Process": json.dumps(
             [
                 {
                     "Id": 1234,
                     "ProcessName": "python",
                     "Path": r"C:\Projects\Demo\.venv\Scripts\python.exe",
+                    "ParentProcessId": 999,
+                    "Owner": r"DOMAIN\demo",
                 }
             ]
         ),
@@ -48,6 +50,8 @@ def test_discovery_merges_listener_process_and_service() -> None:
     assert result[0].service_name == "demo-service"
     assert result[0].service_path == r"C:\tools\WinSW-x64.exe"
     assert result[0].executable_path == Path(r"C:\Projects\Demo\.venv\Scripts\python.exe")
+    assert result[0].owner == r"DOMAIN\demo"
+    assert result[0].parent_pid == 999
 
 
 def test_suggest_config_uses_python_venv_structure() -> None:

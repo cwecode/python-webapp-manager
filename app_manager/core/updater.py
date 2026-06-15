@@ -114,8 +114,7 @@ class AppUpdater:
         if dirty.message.strip():
             return ActionResult(
                 False,
-                "working tree is dirty; update aborted before stopping the runtime:\n"
-                f"{_format_dirty_status(dirty.message)}",
+                _format_dirty_update_message(dirty.message),
             )
         return ActionResult(True, "update preconditions ok")
 
@@ -124,7 +123,7 @@ class AppUpdater:
             command,
             cwd=cwd,
         )
-        message = result.stdout.strip() or result.stderr.strip() or "command completed"
+        message = result.stdout.strip() or result.stderr.strip()
         return ActionResult(result.returncode == 0, message)
 
 
@@ -135,3 +134,19 @@ def _format_dirty_status(status: str) -> str:
     visible = lines[:12]
     suffix = "" if len(lines) <= len(visible) else f"\n... and {len(lines) - len(visible)} more"
     return "\n".join(visible) + suffix
+
+
+def _format_dirty_update_message(status: str) -> str:
+    return (
+        "working tree is dirty; update aborted before stopping the runtime.\n\n"
+        "Git reports local changes in the app repository:\n"
+        f"{_format_dirty_status(status)}\n\n"
+        "Why this is blocked:\n"
+        "Update uses git pull --ff-only. Local changes or untracked files can be overwritten "
+        "or cause merge conflicts, so the running app was left untouched.\n\n"
+        "Fix options:\n"
+        "- If these are intentional code/config changes: commit or stash them.\n"
+        "- If these are generated runtime data files: move them outside the repo, or add them to .gitignore.\n"
+        "- If generated files are already tracked: remove them from Git tracking with git rm --cached, commit that change, "
+        "then run Update again."
+    )

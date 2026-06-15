@@ -88,3 +88,43 @@ def test_stop_listening_process_force_kills_detected_pid(monkeypatch, tmp_path: 
     assert result.ok is True
     assert result.message == "force stopped external PID 4321"
     assert commands == [["taskkill", "/F", "/PID", "4321", "/T"]]
+
+
+def test_stop_listening_process_reports_access_denied_context(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ProcessRunner(tmp_path / "runtime")
+    runner.find_listening_pid = lambda config: 16288  # type: ignore[method-assign]
+
+    def fake_run_capture(command: list[str]):
+        if command[0] == "taskkill":
+            return type(
+                "Result",
+                (),
+                {
+                    "returncode": 5,
+                    "stdout": "FEHLER: Der Prozess mit PID 15680 konnte nicht beendet werden. Ursache: Zugriff verweigert",
+                    "stderr": "",
+                },
+            )()
+        return type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": (
+                    '{"Pid":16288,"Name":"python.exe","ParentPid":1000,'
+                    '"Owner":"DOMAIN\\\\demo","ServiceName":"demo-service","ServiceState":"Running"}'
+                ),
+                "stderr": "",
+            },
+        )()
+
+    monkeypatch.setattr("app_manager.core.process_runner.run_capture", fake_run_capture)
+
+    result = runner.stop_listening_process(config)
+
+    assert result.ok is False
+    assert "Zugriff verweigert" in result.message
+    assert "Process context" in result.message
+    assert "owner=DOMAIN\\demo" in result.message
+    assert "Start App Manager as Administrator" in result.message

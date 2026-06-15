@@ -16,3 +16,5 @@ class DiscoveredApp:
     service_display_name: str | None
     service_status: str | None
     service_path: str | None
+    owner: str | None = None
+    parent_pid: int | None = None

@@ -200,6 +200,26 @@ Update performs:
 If the working tree has local changes, App Manager aborts before stopping the runtime and shows the dirty files reported by Git.
 Clean the repository first by committing, reverting, stashing, or ignoring generated files that should not be tracked.
 
+Typical dirty files are generated runtime data such as:
+
+- `data/*.json`
+- `*.log`
+- local exports
+- report recipient lists
+- uploaded/generated files
+
+Best practice: keep mutable app data outside the Git checkout, for example under `C:\ProgramData\<your-app>`, or add generated files to `.gitignore`.
+If such files are already tracked by Git, `.gitignore` alone is not enough. Remove them from tracking once and commit that cleanup:
+
+```bat
+git rm --cached data\voortman_pipes.json
+git rm --cached data\voortman_pipes_archived.json
+git rm --cached data\xml_export_counter.json
+git commit -m "Stop tracking generated runtime data"
+```
+
+Only do this for files that are truly generated/local runtime data and should not come from GitHub.
+
 ## Practical Server Takeover
 
 When an old Python server is stuck on a port:

@@ -16,12 +16,28 @@ ConvertTo-Json -Compress
 """.strip()
 
 _PROCESSES_SCRIPT = """
-Get-Process -ErrorAction SilentlyContinue |
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
 ForEach-Object {
+    $owner = $null
+    try {
+        $ownerResult = Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction SilentlyContinue
+        if ($ownerResult.User) {
+            if ($ownerResult.Domain) {
+                $owner = "$($ownerResult.Domain)\\$($ownerResult.User)"
+            } else {
+                $owner = $ownerResult.User
+            }
+        }
+    } catch {
+        $owner = $null
+    }
+
     [pscustomobject]@{
-        Id = $_.Id
-        ProcessName = $_.ProcessName
-        Path = $_.Path
+        Id = $_.ProcessId
+        ProcessName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+        Path = $_.ExecutablePath
+        ParentProcessId = $_.ParentProcessId
+        Owner = $owner
     }
 } |
 ConvertTo-Json -Compress
@@ -87,6 +103,8 @@ class WindowsAppDiscovery:
                     service_display_name=_to_optional_str(service.get("DisplayName")),
                     service_status=_to_optional_str(service.get("State")),
                     service_path=_extract_executable(_to_optional_str(service.get("PathName"))),
+                    owner=_to_optional_str(process.get("Owner")),
+                    parent_pid=_to_optional_int(process.get("ParentProcessId")),
                 )
             )
 
@@ -236,6 +254,11 @@ def _to_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _to_optional_int(value: Any) -> int | None:
+    result = _to_int(value)
+    return result if result > 0 else None
 
 
 def _to_path(value: Any) -> Path | None:

@@ -57,8 +57,10 @@ class DiscoveryDialog(QDialog):
         splitter = QSplitter(Qt.Horizontal)
         root_layout.addWidget(splitter, 1)
 
-        self.result_table = QTableWidget(0, 6)
-        self.result_table.setHorizontalHeaderLabels(["Name", "Port", "PID", "Address", "Process", "Service"])
+        self.result_table = QTableWidget(0, 8)
+        self.result_table.setHorizontalHeaderLabels(
+            ["Name", "Port", "PID", "Owner", "Address", "Process", "Parent PID", "Service"]
+        )
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.result_table.setSelectionMode(QTableWidget.SingleSelection)
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -70,7 +72,9 @@ class DiscoveryDialog(QDialog):
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.Stretch)
         splitter.addWidget(self.result_table)
 
         right_panel = QWidget()
@@ -184,9 +188,16 @@ class DiscoveryDialog(QDialog):
             pid_item.setData(Qt.EditRole, app.pid)
             self.result_table.setItem(row, 2, pid_item)
 
-            self.result_table.setItem(row, 3, QTableWidgetItem(app.local_address))
-            self.result_table.setItem(row, 4, QTableWidgetItem(app.process_name))
-            self.result_table.setItem(row, 5, QTableWidgetItem(app.service_name or "-"))
+            self.result_table.setItem(row, 3, QTableWidgetItem(app.owner or "-"))
+            self.result_table.setItem(row, 4, QTableWidgetItem(app.local_address))
+            self.result_table.setItem(row, 5, QTableWidgetItem(app.process_name))
+
+            parent_item = QTableWidgetItem("-" if app.parent_pid is None else str(app.parent_pid))
+            if app.parent_pid is not None:
+                parent_item.setData(Qt.EditRole, app.parent_pid)
+            self.result_table.setItem(row, 6, parent_item)
+
+            self.result_table.setItem(row, 7, QTableWidgetItem(app.service_name or "-"))
 
         self.result_table.setSortingEnabled(True)
         self.result_table.sortItems(1, Qt.AscendingOrder)
@@ -207,7 +218,8 @@ class DiscoveryDialog(QDialog):
         self._selected_discovered_app = app
         self.detected_label.setText(
             f"{app.display_name} | PID {app.pid} | {app.process_name} | "
-            f"{app.local_address}:{app.port} | service={app.service_name or '-'}"
+            f"{app.local_address}:{app.port} | owner={app.owner or '-'} | "
+            f"parent={app.parent_pid or '-'} | service={app.service_name or '-'}"
         )
         self.set_suggested_payload(self._suggest_config(app))
         self._sync_attach_checkbox()
