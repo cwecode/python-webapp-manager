@@ -24,6 +24,21 @@ Der aktuelle Stand ist ein erster vertikaler Slice:
 
 ## Start
 
+Ausfuehrliche Installationsschritte fuer Windows und Terminal Server stehen in `docs/INSTALL_WINDOWS.md`.
+
+Kurzinstallation aus GitHub mit `cmd.exe`:
+
+```bat
+cd /d C:\Python
+git clone https://github.com/cwecode/python-webapp-manager.git App_Manager
+cd App_Manager
+py -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+pip install -e .
+app-manager
+```
+
 ### Entwicklung
 
 ```powershell
@@ -96,4 +111,5 @@ Optionale Felder:
 - Zielplattform ist Windows.
 - Service-Management setzt WinSW und passende Rechte voraus.
 - Laufzeitdateien, Tools und Logs werden standardmaessig unter `C:\ProgramData\python-webapp-manager\` verwaltet.
+- Eine ausfuehrliche Windows-/Terminalserver-Installation steht in `docs/INSTALL_WINDOWS.md`.
 - Eine ausfuehrliche Anleitung zum Anbinden bestehender Apps steht in `docs/CONNECTING_APPS.md`.

@@ -171,6 +171,8 @@ Bind the app to `0.0.0.0` when it should accept network traffic, but use `127.0.
 
 ## Updates
 
+For GitHub-backed updates, see `docs/INSTALL_WINDOWS.md` for the full server setup and private repository authentication workflow.
+
 The update action expects:
 
 - `repo_path` is a Git repository
