@@ -244,14 +244,7 @@ class DiscoveryDialog(QDialog):
             QMessageBox.critical(self, "Validation Failed", "\n".join(result.errors))
             return
         if result.warnings:
-            answer = QMessageBox.question(
-                self,
-                "Validation Warnings",
-                "Review before saving:\n\n"
-                + "\n".join(result.warnings)
-                + "\n\nSave anyway?",
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            if not _confirm_validation_warnings(self, result.warnings):
                 return
         self._selected_config = config
         self.accept()
@@ -361,3 +354,37 @@ def _entry_target_options(entry_kind: str) -> list[str]:
     if entry_kind == "waitress":
         return ["wsgi:app", "app:app", "main:app", "server:app", "run:app"]
     return ["main:app", "app:app", "api:app", "app.main:app", "src.main:app"]
+
+
+def _confirm_validation_warnings(parent: QWidget, warnings: list[str]) -> bool:
+    message = QMessageBox(parent)
+    message.setIcon(QMessageBox.Icon.Warning)
+    message.setWindowTitle("Validation Warnings")
+    message.setText("The app config can be saved, but App Manager found warnings.")
+    message.setInformativeText("\n".join(f"- {warning}" for warning in warnings) + "\n\nSave anyway?")
+    message.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    message.setDefaultButton(QMessageBox.StandardButton.No)
+    message.setStyleSheet(
+        """
+        QMessageBox {
+            background-color: #f8fafc;
+        }
+        QMessageBox QLabel {
+            color: #111827;
+            min-width: 360px;
+        }
+        QMessageBox QPushButton {
+            min-width: 72px;
+            min-height: 30px;
+            padding: 4px 12px;
+            border: 1px solid #1d4ed8;
+            border-radius: 6px;
+            background-color: #2563eb;
+            color: #ffffff;
+        }
+        QMessageBox QPushButton:hover {
+            background-color: #1d4ed8;
+        }
+        """
+    )
+    return message.exec() == QMessageBox.StandardButton.Yes
