@@ -50,6 +50,7 @@ APP_PRESETS = {
         "mode": "prod",
         "entry_kind": "uvicorn",
         "entry_target": "main:app",
+        "host": "0.0.0.0",
         "port": 8000,
         "health_url": "http://127.0.0.1:8000/health",
     },
@@ -441,6 +442,8 @@ class AppConfigDialog(QWizard):
         self._combo_box("mode").setCurrentText(str(preset["mode"]))
         self._combo_box("entry_kind").setCurrentText(str(preset["entry_kind"]))
         self._combo_box("entry_target").setCurrentText(str(preset["entry_target"]))
+        if "host" in preset:
+            self._line_edit("host").setText(str(preset["host"]))
         self._spin_box("port").setValue(int(preset["port"]))
         self._line_edit("health_url").setText(str(preset["health_url"]))
         self._refresh_mode_hint()

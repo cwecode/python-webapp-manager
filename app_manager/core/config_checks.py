@@ -45,6 +45,11 @@ def validate_app_config(config: AppConfig, *, check_port: bool = True, check_ent
     if check_port and _is_port_in_use(config.host, config.port):
         warnings.append(f"port appears to be in use: {config.host}:{config.port}")
 
+    if config.host.strip().lower() in {"127.0.0.1", "localhost", "::1"}:
+        warnings.append(
+            "host is loopback-only; use 0.0.0.0 when the app should be reachable from other machines"
+        )
+
     _check_health_hint(config, warnings)
     return ConfigCheckResult(errors=errors, warnings=warnings)
 

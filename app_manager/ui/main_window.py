@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QSplitter,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -140,10 +141,17 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("App Manager")
         self.resize(1320, 760)
+        self.setMinimumSize(820, 520)
         _apply_app_style(self)
 
         splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(splitter)
+
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+        splitter.addWidget(left_panel)
 
         self.app_table = QTableWidget(0, 4)
         self.app_table.setHorizontalHeaderLabels(["", "App", "Runtime", "Git"])
@@ -155,8 +163,8 @@ class MainWindow(QMainWindow):
         self.app_table.verticalHeader().setVisible(False)
         self.app_table.verticalHeader().setDefaultSectionSize(34)
         self.app_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.app_table.setMinimumWidth(380)
-        self.app_table.setMaximumWidth(560)
+        self.app_table.setMinimumWidth(240)
+        self.app_table.setMaximumWidth(520)
         self.app_table.currentCellChanged.connect(lambda row, _column, _previous_row, _previous_column: self._render_current_app(row))
         header = self.app_table.horizontalHeader()
         header.setHighlightSections(False)
@@ -164,13 +172,32 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        splitter.addWidget(self.app_table)
+        left_layout.addWidget(self.app_table, 3)
+
+        logs_group = QGroupBox("Logs")
+        logs_group.setObjectName("surface")
+        logs_layout = QVBoxLayout(logs_group)
+        logs_layout.setContentsMargins(10, 14, 10, 10)
+        logs_layout.setSpacing(6)
+        left_layout.addWidget(logs_group, 2)
+
+        self.log_tabs = QTabWidget()
+        self.log_tabs.setDocumentMode(True)
+        logs_layout.addWidget(self.log_tabs)
+        self.stdout_view = LogViewer()
+        self.stderr_view = LogViewer()
+        self.log_tabs.addTab(self.stdout_view, "stdout.log")
+        self.log_tabs.addTab(self.stderr_view, "stderr.log")
 
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(16, 12, 12, 12)
         right_layout.setSpacing(10)
-        splitter.addWidget(right_panel)
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.NoFrame)
+        right_scroll.setWidget(right_panel)
+        splitter.addWidget(right_scroll)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([430, 890])
@@ -198,17 +225,18 @@ class MainWindow(QMainWindow):
         link_row.addWidget(self.open_app_button)
         right_layout.addLayout(link_row)
 
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(8)
+        cards_row = QGridLayout()
+        cards_row.setHorizontalSpacing(8)
+        cards_row.setVerticalSpacing(8)
         right_layout.addLayout(cards_row)
         self.runtime_card = _status_card("Runtime", "-")
         self.health_card = _status_card("Health", "-")
         self.git_card = _status_card("Git", "-")
         self.uptime_card = _status_card("Uptime", "-")
-        cards_row.addWidget(self.runtime_card)
-        cards_row.addWidget(self.health_card)
-        cards_row.addWidget(self.git_card)
-        cards_row.addWidget(self.uptime_card)
+        cards_row.addWidget(self.runtime_card, 0, 0)
+        cards_row.addWidget(self.health_card, 0, 1)
+        cards_row.addWidget(self.git_card, 1, 0)
+        cards_row.addWidget(self.uptime_card, 1, 1)
 
         detail_group = QGroupBox("Details")
         detail_group.setObjectName("surface")
@@ -269,12 +297,12 @@ class MainWindow(QMainWindow):
         self.restart_button = QPushButton("Restart App Process")
         self.restart_button.setToolTip("Stop and start the local Python process again.")
         self.restart_button.clicked.connect(self.restart_dev)
-        app_action_grid.addWidget(self.restart_button, 0, 2)
+        app_action_grid.addWidget(self.restart_button, 1, 0)
 
         self.stop_external_button = QPushButton("Stop External Listener")
         self.stop_external_button.setToolTip("Force stop an unmanaged process currently listening on this app's configured port.")
         self.stop_external_button.clicked.connect(self.stop_external_process)
-        app_action_grid.addWidget(self.stop_external_button, 2, 0, 1, 3)
+        app_action_grid.addWidget(self.stop_external_button, 3, 0, 1, 2)
 
         self.install_service_button = QPushButton("Install Service")
         self.install_service_button.clicked.connect(self.install_service)
@@ -282,7 +310,7 @@ class MainWindow(QMainWindow):
 
         self.uninstall_service_button = QPushButton("Uninstall Service")
         self.uninstall_service_button.clicked.connect(self.uninstall_service)
-        service_action_grid.addWidget(self.uninstall_service_button, 1, 3)
+        service_action_grid.addWidget(self.uninstall_service_button, 2, 1)
 
         self.start_service_button = QPushButton("Start Service")
         self.start_service_button.clicked.connect(self.start_service)
@@ -290,7 +318,7 @@ class MainWindow(QMainWindow):
 
         self.stop_service_button = QPushButton("Stop Service")
         self.stop_service_button.clicked.connect(self.stop_service)
-        service_action_grid.addWidget(self.stop_service_button, 1, 2)
+        service_action_grid.addWidget(self.stop_service_button, 2, 0)
 
         self.restart_service_button = QPushButton("Restart Service")
         self.restart_service_button.clicked.connect(self.restart_service)
@@ -299,12 +327,12 @@ class MainWindow(QMainWindow):
         self.health_button = QPushButton("Recheck Health")
         self.health_button.setToolTip("Run the health check immediately instead of waiting for the next refresh.")
         self.health_button.clicked.connect(self.check_health)
-        app_action_grid.addWidget(self.health_button, 1, 0)
+        app_action_grid.addWidget(self.health_button, 1, 1)
 
         self.update_button = QPushButton("Update App")
         self.update_button.setToolTip("Pull the selected app from GitHub and restart the active runtime when needed.")
         self.update_button.clicked.connect(self.update_app)
-        app_action_grid.addWidget(self.update_button, 1, 1, 1, 2)
+        app_action_grid.addWidget(self.update_button, 2, 0, 1, 2)
 
         self.open_logs_button = QPushButton("Open Logs")
         self.open_logs_button.clicked.connect(self.open_logs)
@@ -356,21 +384,7 @@ class MainWindow(QMainWindow):
         self.scan_status_label.setObjectName("statusLine")
         self.scan_status_label.setWordWrap(True)
         right_layout.addWidget(self.scan_status_label)
-
-        logs_group = QGroupBox("Logs")
-        logs_group.setObjectName("surface")
-        logs_layout = QVBoxLayout(logs_group)
-        logs_layout.setContentsMargins(10, 14, 10, 10)
-        logs_layout.setSpacing(6)
-        right_layout.addWidget(logs_group, 1)
-
-        self.log_tabs = QTabWidget()
-        self.log_tabs.setDocumentMode(True)
-        logs_layout.addWidget(self.log_tabs)
-        self.stdout_view = LogViewer()
-        self.stderr_view = LogViewer()
-        self.log_tabs.addTab(self.stdout_view, "stdout.log")
-        self.log_tabs.addTab(self.stderr_view, "stderr.log")
+        right_layout.addStretch(1)
 
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(AUTO_REFRESH_INTERVAL_MS)
@@ -1351,6 +1365,13 @@ def _apply_app_style(window: QWidget) -> None:
             background: #2c3238;
             width: 1px;
         }
+        QScrollArea {
+            background: #151719;
+            border: 0;
+        }
+        QScrollArea > QWidget > QWidget {
+            background: #151719;
+        }
         QTableWidget {
             background: #1d2023;
             alternate-background-color: #23272b;
@@ -1488,6 +1509,42 @@ def _apply_app_style(window: QWidget) -> None:
             background: #0f1113;
             color: #d7e3ef;
             font-family: Consolas, "Cascadia Mono", monospace;
+        }
+        QScrollBar:vertical {
+            background: #111315;
+            width: 12px;
+            margin: 0;
+            border-left: 1px solid #353c44;
+        }
+        QScrollBar::handle:vertical {
+            background: #3a424a;
+            min-height: 24px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: #4b5563;
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {
+            height: 0;
+        }
+        QScrollBar:horizontal {
+            background: #111315;
+            height: 12px;
+            margin: 0;
+            border-top: 1px solid #353c44;
+        }
+        QScrollBar::handle:horizontal {
+            background: #3a424a;
+            min-width: 24px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:horizontal:hover {
+            background: #4b5563;
+        }
+        QScrollBar::add-line:horizontal,
+        QScrollBar::sub-line:horizontal {
+            width: 0;
         }
         """
     )
