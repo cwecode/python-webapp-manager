@@ -17,7 +17,22 @@ class ServiceRunner:
         self.store = RuntimeStore(runtime_root)
 
     def install_service(self, config: AppConfig) -> ActionResult:
-        return self._run_winsw(config, "install", require_admin=True)
+        result = self._run_winsw(config, "install", require_admin=True)
+        if result.ok or not _service_already_exists(result.message):
+            return result
+
+        stop_result = self._run_winsw(config, "stop")
+        if not stop_result.ok and not (_service_already_stopped(stop_result.message) or _service_not_installed(stop_result.message)):
+            return ActionResult(False, f"{result.message}; failed to stop existing service before reinstall: {stop_result.message}")
+
+        uninstall_result = self.uninstall_service(config)
+        if not uninstall_result.ok and not _service_not_installed(uninstall_result.message):
+            return ActionResult(False, f"{result.message}; failed to uninstall existing service before reinstall: {uninstall_result.message}")
+
+        retry_result = self._run_winsw(config, "install", require_admin=True)
+        if not retry_result.ok:
+            return retry_result
+        return ActionResult(True, f"existing service removed; {retry_result.message}")
 
     def uninstall_service(self, config: AppConfig) -> ActionResult:
         return self._run_winsw(config, "uninstall", require_admin=True)
@@ -190,6 +205,16 @@ def _service_not_installed(message: str) -> bool:
         or "service is not installed" in normalized
         or "kein installierter dienst" in normalized
         or "ist kein installierter dienst" in normalized
+    )
+
+
+def _service_already_exists(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "already exists" in normalized
+        or "already installed" in normalized
+        or "dienst ist bereits vorhanden" in normalized
+        or "bereits vorhanden" in normalized
     )
 
 

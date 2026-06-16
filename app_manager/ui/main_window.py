@@ -305,28 +305,22 @@ class MainWindow(QMainWindow):
         self.stop_external_button.clicked.connect(self.stop_external_process)
         app_action_grid.addWidget(self.stop_external_button, 3, 0, 1, 2)
 
-        self.install_service_button = QPushButton("Install Service")
-        self.install_service_button.clicked.connect(self.install_service)
-        service_action_grid.addWidget(self.install_service_button, 1, 0)
+        self.service_note_label = QLabel(
+            "Service actions always apply the current config and account."
+        )
+        self.service_note_label.setObjectName("statusLine")
+        self.service_note_label.setWordWrap(True)
+        service_action_grid.addWidget(self.service_note_label, 0, 0, 1, 2)
 
-        self.uninstall_service_button = QPushButton("Uninstall Service")
-        self.uninstall_service_button.clicked.connect(self.uninstall_service)
-        service_action_grid.addWidget(self.uninstall_service_button, 2, 1)
-
-        self.start_service_button = QPushButton("Install + Start Service")
-        self.start_service_button.setToolTip("Install the Windows service with the current config, then start it.")
+        self.start_service_button = QPushButton("Apply + Start Service")
+        self.start_service_button.setToolTip("Install the Windows service with the current config and start it.")
         self.start_service_button.clicked.connect(self.start_service)
-        service_action_grid.addWidget(self.start_service_button, 1, 1)
+        service_action_grid.addWidget(self.start_service_button, 1, 0)
 
-        self.stop_service_button = QPushButton("Stop + Uninstall Service")
-        self.stop_service_button.setToolTip("Stop the Windows service, then uninstall it so the next start applies the current config.")
+        self.stop_service_button = QPushButton("Stop + Remove Service")
+        self.stop_service_button.setToolTip("Stop the Windows service and remove it from Windows.")
         self.stop_service_button.clicked.connect(self.stop_service)
-        service_action_grid.addWidget(self.stop_service_button, 2, 0)
-
-        self.restart_service_button = QPushButton("Reinstall + Restart Service")
-        self.restart_service_button.setToolTip("Stop, uninstall, install with the current config, then start the service.")
-        self.restart_service_button.clicked.connect(self.restart_service)
-        service_action_grid.addWidget(self.restart_service_button, 0, 1)
+        service_action_grid.addWidget(self.stop_service_button, 1, 1)
 
         self.health_button = QPushButton("Recheck Health")
         self.health_button.setToolTip("Run the health check immediately instead of waiting for the next refresh.")
@@ -368,10 +362,7 @@ class MainWindow(QMainWindow):
         _set_button_role(self.update_button, "warning")
         for button in (
             self.restart_button,
-            self.install_service_button,
             self.start_service_button,
-            self.stop_service_button,
-            self.restart_service_button,
             self.refresh_button,
             self.add_app_button,
             self.edit_app_button,
@@ -382,7 +373,7 @@ class MainWindow(QMainWindow):
             self.self_update_button,
         ):
             _set_button_role(button, "secondary")
-        _set_button_role(self.uninstall_service_button, "danger")
+        _set_button_role(self.stop_service_button, "danger")
 
         self.scan_status_label = QLabel("Scan status: not started")
         self.scan_status_label.setObjectName("statusLine")
@@ -503,20 +494,11 @@ class MainWindow(QMainWindow):
     def update_app(self) -> None:
         self._run_selected_action("Update App", self.controller.update_app)
 
-    def install_service(self) -> None:
-        self._run_selected_action("Install Service", self.controller.install_service)
-
-    def uninstall_service(self) -> None:
-        self._run_selected_action("Uninstall Service", self.controller.uninstall_service)
-
     def start_service(self) -> None:
-        self._run_selected_action("Start Service", self.controller.start_service)
+        self._run_selected_action("Apply + Start Service", self.controller.start_service)
 
     def stop_service(self) -> None:
-        self._run_selected_action("Stop Service", self.controller.stop_service)
-
-    def restart_service(self) -> None:
-        self._run_selected_action("Restart Service", self.controller.restart_service)
+        self._run_selected_action("Stop + Remove Service", self.controller.stop_service)
 
     def open_logs(self) -> None:
         config = self._selected_config()
@@ -963,11 +945,8 @@ pause
                 self.restart_button,
                 self.edit_app_button,
                 self.open_app_button,
-                self.install_service_button,
-                self.uninstall_service_button,
                 self.start_service_button,
                 self.stop_service_button,
-                self.restart_service_button,
                 self.health_button,
                 self.update_button,
                 self.open_logs_button,
@@ -997,11 +976,8 @@ pause
         self.stop_button.setEnabled(snapshot.active_mode == "dev")
         self.stop_external_button.setEnabled(not observed and external_active)
         self.restart_button.setEnabled(snapshot.active_mode == "dev")
-        self.install_service_button.setEnabled(prod_supported)
-        self.uninstall_service_button.setEnabled(prod_supported)
         self.start_service_button.setEnabled(prod_supported and not runtime_active)
         self.stop_service_button.setEnabled(snapshot.active_mode == "prod")
-        self.restart_service_button.setEnabled(snapshot.active_mode == "prod")
         self.health_button.setEnabled(True)
         self.update_button.setEnabled(not observed)
         if snapshot.git_state == "update_available":

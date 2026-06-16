@@ -118,6 +118,29 @@ def test_get_status_treats_winsw_started_as_running(monkeypatch, tmp_path: Path)
     assert runner.get_status(config) == ("running", "Started")
 
 
+def test_install_service_reinstalls_when_windows_reports_service_already_exists(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+    calls: list[tuple[str, bool]] = []
+    install_attempts = 0
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        nonlocal install_attempts
+        calls.append((command, require_admin))
+        if command == "install":
+            install_attempts += 1
+            if install_attempts == 1:
+                return ActionResult(False, "Failed to install the service. Der angegebene Dienst ist bereits vorhanden.")
+        return ActionResult(True, command.title())
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.install_service(config)
+
+    assert result.ok is True
+    assert calls == [("install", True), ("stop", False), ("uninstall", True), ("install", True)]
+
+
 def test_stop_service_succeeds_when_service_is_not_installed(monkeypatch, tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     runner = ServiceRunner(tmp_path / "runtime")
