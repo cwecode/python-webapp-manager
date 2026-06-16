@@ -133,16 +133,75 @@ def test_stop_service_succeeds_when_service_is_not_installed(monkeypatch, tmp_pa
     assert result.message == "service is not installed"
 
 
-def test_restart_service_requires_install_when_service_is_not_installed(monkeypatch, tmp_path: Path) -> None:
+def test_start_service_installs_missing_service_before_start(monkeypatch, tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     runner = ServiceRunner(tmp_path / "runtime")
+    calls: list[tuple[str, bool]] = []
 
     def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
-        return ActionResult(False, "FATAL - service is not installed")
+        calls.append((command, require_admin))
+        if command == "status":
+            return ActionResult(False, "FATAL - service is not installed")
+        return ActionResult(True, command.title())
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.start_service(config)
+
+    assert result.ok is True
+    assert calls == [("status", False), ("install", True), ("start", False)]
+
+
+def test_start_service_reinstalls_stopped_service_before_start(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+    calls: list[tuple[str, bool]] = []
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        calls.append((command, require_admin))
+        if command == "status":
+            return ActionResult(True, "Stopped")
+        return ActionResult(True, command.title())
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.start_service(config)
+
+    assert result.ok is True
+    assert calls == [("status", False), ("uninstall", True), ("install", True), ("start", False)]
+
+
+def test_stop_service_uninstalls_after_stop(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+    calls: list[tuple[str, bool]] = []
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        calls.append((command, require_admin))
+        return ActionResult(True, command.title())
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.stop_service(config)
+
+    assert result.ok is True
+    assert calls == [("stop", False), ("uninstall", True)]
+
+
+def test_restart_service_installs_when_service_is_missing(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+    calls: list[tuple[str, bool]] = []
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        calls.append((command, require_admin))
+        if command in {"stop", "status"}:
+            return ActionResult(False, "FATAL - service is not installed")
+        return ActionResult(True, command.title())
 
     monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
 
     result = runner.restart_service(config)
 
-    assert result.ok is False
-    assert result.message == "service is not installed; click Install Service first"
+    assert result.ok is True
+    assert calls == [("stop", False), ("status", False), ("install", True), ("start", False)]

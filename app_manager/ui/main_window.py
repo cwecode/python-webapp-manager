@@ -313,15 +313,18 @@ class MainWindow(QMainWindow):
         self.uninstall_service_button.clicked.connect(self.uninstall_service)
         service_action_grid.addWidget(self.uninstall_service_button, 2, 1)
 
-        self.start_service_button = QPushButton("Start Service")
+        self.start_service_button = QPushButton("Install + Start Service")
+        self.start_service_button.setToolTip("Install the Windows service with the current config, then start it.")
         self.start_service_button.clicked.connect(self.start_service)
         service_action_grid.addWidget(self.start_service_button, 1, 1)
 
-        self.stop_service_button = QPushButton("Stop Service")
+        self.stop_service_button = QPushButton("Stop + Uninstall Service")
+        self.stop_service_button.setToolTip("Stop the Windows service, then uninstall it so the next start applies the current config.")
         self.stop_service_button.clicked.connect(self.stop_service)
         service_action_grid.addWidget(self.stop_service_button, 2, 0)
 
-        self.restart_service_button = QPushButton("Restart Service")
+        self.restart_service_button = QPushButton("Reinstall + Restart Service")
+        self.restart_service_button.setToolTip("Stop, uninstall, install with the current config, then start the service.")
         self.restart_service_button.clicked.connect(self.restart_service)
         service_action_grid.addWidget(self.restart_service_button, 0, 1)
 

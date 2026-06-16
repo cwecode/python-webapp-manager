@@ -90,7 +90,7 @@ gh auth login
 - App Manager can download or reuse an existing WinSW executable.
 - Do not run a local app process and a Windows service on the same host/port at the same time.
 - If the service must access a UNC path or other network share, configure a service account that has those permissions.
-- After changing a service account, stop and uninstall the existing service, then install and start it again.
+- App Manager's main service buttons reinstall services intentionally: start installs with the current config first, stop removes the service afterwards.
 
 Example service account values:
 

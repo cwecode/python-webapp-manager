@@ -23,26 +23,48 @@ class ServiceRunner:
         return self._run_winsw(config, "uninstall", require_admin=True)
 
     def start_service(self, config: AppConfig) -> ActionResult:
-        return self._run_winsw(config, "start")
+        status, detail = self.get_status(config)
+        if status == "running":
+            return ActionResult(True, f"service is already running: {detail}")
+        if status == "error":
+            return ActionResult(False, detail)
+
+        if not _service_not_installed(detail):
+            uninstall_result = self.uninstall_service(config)
+            if not uninstall_result.ok and not _service_not_installed(uninstall_result.message):
+                return uninstall_result
+
+        install_result = self.install_service(config)
+        if not install_result.ok:
+            return install_result
+
+        start_result = self._run_winsw(config, "start")
+        if not start_result.ok:
+            return start_result
+        return ActionResult(True, f"{install_result.message}; {start_result.message}")
 
     def stop_service(self, config: AppConfig) -> ActionResult:
         result = self._run_winsw(config, "stop")
         if not result.ok and _service_not_installed(result.message):
             return ActionResult(True, "service is not installed")
-        return result
+        if not result.ok and not _service_already_stopped(result.message):
+            return result
+
+        uninstall_result = self.uninstall_service(config)
+        if not uninstall_result.ok and not _service_not_installed(uninstall_result.message):
+            return uninstall_result
+        if not result.ok:
+            return ActionResult(True, uninstall_result.message)
+        return ActionResult(True, f"{result.message}; {uninstall_result.message}")
 
     def restart_service(self, config: AppConfig) -> ActionResult:
-        status, detail = self.get_status(config)
-        if _service_not_installed(detail):
-            return ActionResult(False, "service is not installed; click Install Service first")
-
         stop_result = self.stop_service(config)
-        if not stop_result.ok and "stopped" not in stop_result.message.lower():
+        if not stop_result.ok:
             return stop_result
-        status, detail = self.get_status(config)
-        if status == "running":
-            return ActionResult(False, f"service is still running after stop: {detail}")
-        return self.start_service(config)
+        start_result = self.start_service(config)
+        if not start_result.ok:
+            return start_result
+        return ActionResult(True, f"{stop_result.message}; {start_result.message}")
 
     def get_status(self, config: AppConfig) -> tuple[RuntimeStatus, str]:
         result = self._run_winsw(config, "status")
@@ -168,4 +190,16 @@ def _service_not_installed(message: str) -> bool:
         or "service is not installed" in normalized
         or "kein installierter dienst" in normalized
         or "ist kein installierter dienst" in normalized
+    )
+
+
+def _service_already_stopped(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "already stopped" in normalized
+        or "service is stopped" in normalized
+        or "not running" in normalized
+        or "is not running" in normalized
+        or "nicht gestartet" in normalized
+        or "nicht ausgeführt" in normalized
     )
