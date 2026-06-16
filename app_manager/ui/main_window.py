@@ -245,8 +245,8 @@ class MainWindow(QMainWindow):
         self.uptime_card = _status_card("Uptime", "-")
         cards_row.addWidget(self.runtime_card, 0, 0)
         cards_row.addWidget(self.health_card, 0, 1)
-        cards_row.addWidget(self.git_card, 1, 0)
-        cards_row.addWidget(self.uptime_card, 1, 1)
+        cards_row.addWidget(self.git_card, 0, 2)
+        cards_row.addWidget(self.uptime_card, 0, 3)
 
         app_actions = QGroupBox("App Process Controls")
         app_actions.setObjectName("surface")
@@ -1209,7 +1209,7 @@ def _status_card(title: str, value: str) -> QLabel:
     label = QLabel()
     label.setObjectName("statusCard")
     label.setFrameShape(QFrame.StyledPanel)
-    label.setMinimumHeight(62)
+    label.setMinimumHeight(48)
     label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
     label.setWordWrap(True)
     _set_card(label, title, value, QColor("#e5e7eb"))
@@ -1225,7 +1225,7 @@ def _set_card(label: QLabel, title: str, value: str, color: QColor) -> None:
         "border: 1px solid #333a42;"
         f"border-left: 4px solid {color.name()};"
         "border-radius: 5px;"
-        "padding: 8px 10px;"
+        "padding: 5px 9px;"
         "font-weight: 600;"
         "}"
     )
