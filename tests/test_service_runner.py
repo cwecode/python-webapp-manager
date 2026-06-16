@@ -4,8 +4,19 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from subprocess import CompletedProcess
 
+from app_manager.core.service_inspect import ServiceInfo
 from app_manager.core.service_runner import ServiceRunner
 from app_manager.models import ActionResult, AppConfig
+
+
+class _StubInspector:
+    def __init__(self, info: ServiceInfo) -> None:
+        self.info = info
+        self.calls: list[str] = []
+
+    def inspect(self, service_name: str) -> ServiceInfo:
+        self.calls.append(service_name)
+        return self.info
 
 
 def _make_config(tmp_path: Path) -> AppConfig:
@@ -56,7 +67,7 @@ def test_write_xml_uses_waitress_serve_executable(tmp_path: Path) -> None:
     assert service.find("serviceaccount") is None
 
 
-def test_write_xml_includes_custom_service_account(tmp_path: Path) -> None:
+def test_write_xml_local_account_uses_winsw_v2_schema_without_domain(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     config.service_account = r".\Jobserver"
     config.service_password = "secret"
@@ -67,9 +78,41 @@ def test_write_xml_includes_custom_service_account(tmp_path: Path) -> None:
     service_account = service.find("serviceaccount")
 
     assert service_account is not None
-    assert service_account.findtext("username") == r".\Jobserver"
+    # WinSW v2 expects <user> (bare name) + optional <domain>, not <username>.
+    assert service_account.find("username") is None
+    assert service_account.findtext("domain") is None
+    assert service_account.findtext("user") == "Jobserver"
     assert service_account.findtext("password") == "secret"
     assert service_account.findtext("allowservicelogon") == "true"
+
+
+def test_write_xml_domain_account_splits_into_domain_and_user(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r"igefa\jobserver"
+    config.service_password = "secret"
+    runner = ServiceRunner(tmp_path / "runtime")
+
+    xml_path = runner.write_xml(config)
+    service_account = ET.fromstring(xml_path.read_text(encoding="utf-8")).find("serviceaccount")
+
+    assert service_account is not None
+    assert service_account.findtext("domain") == "igefa"
+    assert service_account.findtext("user") == "jobserver"
+    assert service_account.findtext("password") == "secret"
+
+
+def test_write_xml_gmsa_account_omits_password(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r"igefa\svc-jobs$"
+    config.service_password = "ignored"
+    runner = ServiceRunner(tmp_path / "runtime")
+
+    xml_path = runner.write_xml(config)
+    service_account = ET.fromstring(xml_path.read_text(encoding="utf-8")).find("serviceaccount")
+
+    assert service_account is not None
+    assert service_account.findtext("user") == "svc-jobs$"
+    assert service_account.find("password") is None
 
 
 def test_run_winsw_uses_service_named_wrapper_next_to_xml(monkeypatch, tmp_path: Path) -> None:
@@ -228,3 +271,116 @@ def test_restart_service_installs_when_service_is_missing(monkeypatch, tmp_path:
 
     assert result.ok is True
     assert calls == [("stop", False), ("status", False), ("install", True), ("start", False)]
+
+
+def test_start_service_warns_when_installed_account_differs(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r"igefa\jobserver"
+    inspector = _StubInspector(
+        ServiceInfo(exists=True, name="demo-service", start_name="LocalSystem", state="Running", process_id=42)
+    )
+    runner = ServiceRunner(tmp_path / "runtime", inspector=inspector)
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        if command == "status":
+            return ActionResult(False, "FATAL - service is not installed")
+        return ActionResult(True, command.title())
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.start_service(config)
+
+    assert result.ok is True
+    assert "WARNING" in result.message
+    assert "LocalSystem" in result.message
+    assert inspector.calls == ["demo-service"]
+
+
+def test_start_service_does_not_warn_when_account_matches(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r"igefa\jobserver"
+    inspector = _StubInspector(
+        ServiceInfo(exists=True, name="demo-service", start_name=r"igefa\jobserver", state="Running", process_id=42)
+    )
+    runner = ServiceRunner(tmp_path / "runtime", inspector=inspector)
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        if command == "status":
+            return ActionResult(False, "FATAL - service is not installed")
+        return ActionResult(True, command.title())
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.start_service(config)
+
+    assert result.ok is True
+    assert "WARNING" not in result.message
+
+
+def test_start_service_skips_verification_without_configured_account(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    inspector = _StubInspector(ServiceInfo(exists=True, name="demo-service", start_name="LocalSystem"))
+    runner = ServiceRunner(tmp_path / "runtime", inspector=inspector)
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        if command == "status":
+            return ActionResult(False, "FATAL - service is not installed")
+        return ActionResult(True, command.title())
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    result = runner.start_service(config)
+
+    assert result.ok is True
+    assert "WARNING" not in result.message
+    assert inspector.calls == []
+
+
+def test_diagnose_reports_account_mismatch(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r"igefa\jobserver"
+    inspector = _StubInspector(
+        ServiceInfo(
+            exists=True,
+            name="demo-service",
+            start_name="LocalSystem",
+            state="Running",
+            process_id=42,
+            path_name=r"C:\runtime\demo-service.exe",
+        )
+    )
+    runner = ServiceRunner(tmp_path / "runtime", inspector=inspector)
+
+    result = runner.diagnose(config)
+
+    assert result.ok is False
+    assert "SERVICE_START_NAME): LocalSystem" in result.message
+    assert "Account match: NO" in result.message
+    assert "Network access: WARNING" in result.message
+
+
+def test_diagnose_reports_healthy_domain_account(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r"igefa\jobserver"
+    inspector = _StubInspector(
+        ServiceInfo(exists=True, name="demo-service", start_name=r"igefa\jobserver", state="Running", process_id=42)
+    )
+    runner = ServiceRunner(tmp_path / "runtime", inspector=inspector)
+
+    result = runner.diagnose(config)
+
+    assert result.ok is True
+    assert "Account match: yes" in result.message
+    assert "WARNING" not in result.message
+
+
+def test_diagnose_reports_when_service_missing(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r"igefa\jobserver"
+    inspector = _StubInspector(ServiceInfo(exists=False, name="demo-service"))
+    runner = ServiceRunner(tmp_path / "runtime", inspector=inspector)
+
+    result = runner.diagnose(config)
+
+    assert result.ok is False
+    assert "Installed: no" in result.message

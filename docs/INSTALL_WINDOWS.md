@@ -89,8 +89,9 @@ gh auth login
 - Services are created through WinSW.
 - App Manager can download or reuse an existing WinSW executable.
 - Do not run a local app process and a Windows service on the same host/port at the same time.
-- If the service must access a UNC path or other network share, configure a service account that has those permissions.
+- If the service must access a UNC path or other network share, configure a service account that has those permissions. A service left as the default `LocalSystem` cannot reach a share that is restricted to a specific user.
 - App Manager keeps service controls intentionally small: `Apply + Start Service` installs with the current config, `Stop + Remove Service` removes the service afterwards.
+- `Service Diagnose` reports the account Windows actually installed the service under (`SERVICE_START_NAME`), its state, PID and binary path, and warns when that account differs from the configured one or cannot reach network shares. `Apply + Start Service` also appends a mismatch warning to its result message.
 
 Example service account values:
 
@@ -98,6 +99,11 @@ Example service account values:
 Local server user: .\Jobserver
 Domain user:       DOMAIN\Jobserver
 ```
+
+App Manager downloads the latest stable WinSW (2.x) and writes the v2 service-account
+schema (`<domain>` + `<user>`). If you point `winsw_exe_path` at a WinSW v3 binary instead,
+the account element name differs (`<username>`); use `Service Diagnose` to confirm the
+installed account after switching binaries.
 
 ## Troubleshooting
 

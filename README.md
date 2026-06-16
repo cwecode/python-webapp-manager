@@ -74,7 +74,7 @@ Use `Find Running Apps` when an app is already running and you need to identify 
 - `both`: Both options are configured, but only one should run on the same port at the same time.
 - `observed`: App Manager only observes health/port state and does not start, stop or update the app.
 
-For apps that need network shares, configure the service account on the app's Service page. Example for a local terminal-server user: `.\Jobserver`. Example for a domain user: `DOMAIN\Jobserver`. The main service buttons are intentionally reduced to `Apply + Start Service` and `Stop + Remove Service` so service changes are applied cleanly without redundant actions.
+For apps that need network shares, configure the service account on the app's Service page. Example for a local terminal-server user: `.\Jobserver`. Example for a domain user: `DOMAIN\Jobserver`. The main service buttons are intentionally reduced to `Apply + Start Service` and `Stop + Remove Service` so service changes are applied cleanly without redundant actions. `Service Diagnose` shows the account Windows actually runs the service under and warns when it differs from the configured account (for example when a service silently fell back to `LocalSystem` and therefore cannot read a UNC share).
 
 ## Updates
 

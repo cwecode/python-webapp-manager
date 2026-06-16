@@ -89,6 +89,9 @@ class AppController:
     def stop_service(self, config: AppConfig) -> ActionResult:
         return self._record(config, "stop_service", self.service_runner.stop_service(config))
 
+    def diagnose_service(self, config: AppConfig) -> ActionResult:
+        return self.service_runner.diagnose(config)
+
     def restart_service(self, config: AppConfig) -> ActionResult:
         return self._record(config, "restart_service", self.service_runner.restart_service(config))
 

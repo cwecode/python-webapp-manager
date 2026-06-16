@@ -322,6 +322,14 @@ class MainWindow(QMainWindow):
         self.stop_service_button.clicked.connect(self.stop_service)
         service_action_grid.addWidget(self.stop_service_button, 1, 1)
 
+        self.diagnose_service_button = QPushButton("Service Diagnose")
+        self.diagnose_service_button.setToolTip(
+            "Show the installed service account, status, PID and binary path, and warn when the "
+            "installed account differs from the configured one or cannot reach network shares."
+        )
+        self.diagnose_service_button.clicked.connect(self.diagnose_service)
+        service_action_grid.addWidget(self.diagnose_service_button, 2, 0, 1, 2)
+
         self.health_button = QPushButton("Recheck Health")
         self.health_button.setToolTip("Run the health check immediately instead of waiting for the next refresh.")
         self.health_button.clicked.connect(self.check_health)
@@ -363,6 +371,7 @@ class MainWindow(QMainWindow):
         for button in (
             self.restart_button,
             self.start_service_button,
+            self.diagnose_service_button,
             self.refresh_button,
             self.add_app_button,
             self.edit_app_button,
@@ -499,6 +508,9 @@ class MainWindow(QMainWindow):
 
     def stop_service(self) -> None:
         self._run_selected_action("Stop + Remove Service", self.controller.stop_service)
+
+    def diagnose_service(self) -> None:
+        self._run_selected_action("Service Diagnose", self.controller.diagnose_service)
 
     def open_logs(self) -> None:
         config = self._selected_config()
@@ -947,6 +959,7 @@ pause
                 self.open_app_button,
                 self.start_service_button,
                 self.stop_service_button,
+                self.diagnose_service_button,
                 self.health_button,
                 self.update_button,
                 self.open_logs_button,
@@ -978,6 +991,7 @@ pause
         self.restart_button.setEnabled(snapshot.active_mode == "dev")
         self.start_service_button.setEnabled(prod_supported and not runtime_active)
         self.stop_service_button.setEnabled(snapshot.active_mode == "prod")
+        self.diagnose_service_button.setEnabled(prod_supported)
         self.health_button.setEnabled(True)
         self.update_button.setEnabled(not observed)
         if snapshot.git_state == "update_available":

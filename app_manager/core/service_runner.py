@@ -6,15 +6,22 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from app_manager.core.runtime_store import RuntimeStore
+from app_manager.core.service_inspect import (
+    ServiceInfo,
+    ServiceInspector,
+    accounts_match,
+    network_account_warning,
+)
 from app_manager.core.subprocess_utils import run_capture
 from app_manager.models.config import AppConfig
 from app_manager.models.runtime import ActionResult, RuntimeStatus
 
 
 class ServiceRunner:
-    def __init__(self, runtime_root: Path) -> None:
+    def __init__(self, runtime_root: Path, inspector: ServiceInspector | None = None) -> None:
         self.runtime_root = runtime_root
         self.store = RuntimeStore(runtime_root)
+        self.inspector = inspector or ServiceInspector()
 
     def install_service(self, config: AppConfig) -> ActionResult:
         result = self._run_winsw(config, "install", require_admin=True)
@@ -40,7 +47,7 @@ class ServiceRunner:
     def start_service(self, config: AppConfig) -> ActionResult:
         status, detail = self.get_status(config)
         if status == "running":
-            return ActionResult(True, f"service is already running: {detail}")
+            return ActionResult(True, self._with_account_warning(config, f"service is already running: {detail}"))
         if status == "error":
             return ActionResult(False, detail)
 
@@ -56,7 +63,7 @@ class ServiceRunner:
         start_result = self._run_winsw(config, "start")
         if not start_result.ok:
             return start_result
-        return ActionResult(True, f"{install_result.message}; {start_result.message}")
+        return ActionResult(True, self._with_account_warning(config, f"{install_result.message}; {start_result.message}"))
 
     def stop_service(self, config: AppConfig) -> ActionResult:
         result = self._run_winsw(config, "stop")
@@ -184,17 +191,105 @@ class ServiceRunner:
         if not config.service_account:
             return
 
+        domain, user = _split_service_account(config.service_account)
+        if not user:
+            return
+
+        # WinSW v2 (the binary App Manager downloads from the latest stable
+        # release) expects <domain> + <user> with a bare account name. The
+        # combined <username>DOMAIN\user</username> form is WinSW v3 only and
+        # is silently ignored by v2, which then installs the service as
+        # LocalSystem - the account never takes effect.
         service_account = ET.SubElement(service, "serviceaccount")
-        ET.SubElement(service_account, "username").text = config.service_account
-        if config.service_password:
+        if domain:
+            ET.SubElement(service_account, "domain").text = domain
+        ET.SubElement(service_account, "user").text = user
+        # Group Managed Service Accounts (account name ending in "$") have no
+        # password; everything else uses the configured password when present.
+        if config.service_password and not user.endswith("$"):
             ET.SubElement(service_account, "password").text = config.service_password
         ET.SubElement(service_account, "allowservicelogon").text = "true"
+
+    def inspect_service(self, config: AppConfig) -> ServiceInfo:
+        return self.inspector.inspect(config.service_name)
+
+    def diagnose(self, config: AppConfig) -> ActionResult:
+        if config.mode not in {"prod", "both"}:
+            return ActionResult(False, "service diagnostics are only available for prod or both mode")
+        try:
+            info = self.inspector.inspect(config.service_name)
+        except OSError as exc:
+            return ActionResult(False, f"service inspection failed: {exc}")
+
+        configured = config.service_account or "LocalSystem (default)"
+        lines = [f"Service: {config.service_name}", f"Configured account: {configured}"]
+        if not info.exists:
+            lines.append("Installed: no (service not found in Windows SCM)")
+            return ActionResult(False, "\n".join(lines))
+
+        match = accounts_match(config.service_account, info.start_name)
+        net_warning = network_account_warning(info.start_name)
+        lines.extend(
+            [
+                "Installed: yes",
+                f"State: {info.state or 'unknown'}",
+                f"PID: {info.process_id if info.process_id else '-'}",
+                f"BinPath: {info.path_name or '-'}",
+                f"Installed account (SERVICE_START_NAME): {info.start_name or 'unknown'}",
+                f"Account match: {'yes' if match else 'NO - configured and installed account differ'}",
+            ]
+        )
+        if net_warning:
+            lines.append(f"Network access: WARNING - {net_warning}")
+        else:
+            lines.append("Network access: account can present a user identity to file shares")
+        return ActionResult(match and net_warning is None, "\n".join(lines))
+
+    def _with_account_warning(self, config: AppConfig, message: str) -> str:
+        warning = self._verify_service_account(config)
+        if warning:
+            return f"{message}; WARNING: {warning}"
+        return message
+
+    def _verify_service_account(self, config: AppConfig) -> str | None:
+        if not config.service_account:
+            return None
+        try:
+            info = self.inspector.inspect(config.service_name)
+        except OSError as exc:
+            return f"could not verify installed service account: {exc}"
+        if not info.exists:
+            return None
+        if not accounts_match(config.service_account, info.start_name):
+            actual = info.start_name or "unknown"
+            return (
+                f"installed service account mismatch: configured '{config.service_account}', "
+                f"but Windows reports '{actual}'"
+            )
+        return None
 
     def _is_admin(self) -> bool:
         try:
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
         except (AttributeError, OSError):
             return False
+
+
+def _split_service_account(account: str) -> tuple[str | None, str]:
+    """Split a 'DOMAIN\\user' style account into (domain, bare_user).
+
+    A leading '.' or empty domain means the local computer, for which WinSW v2
+    wants the domain element omitted. A bare account name has no domain.
+    """
+    text = (account or "").strip()
+    if "\\" in text:
+        domain, _, user = text.partition("\\")
+        domain = domain.strip()
+        user = user.strip()
+        if domain in {"", "."}:
+            return None, user
+        return domain, user
+    return None, text
 
 
 def _service_not_installed(message: str) -> bool:
