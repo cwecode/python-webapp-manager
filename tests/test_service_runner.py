@@ -87,6 +87,18 @@ def test_get_status_treats_not_installed_service_as_stopped(monkeypatch, tmp_pat
     assert runner.get_status(config) == ("stopped", "service is not installed")
 
 
+def test_get_status_treats_winsw_started_as_running(monkeypatch, tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    runner = ServiceRunner(tmp_path / "runtime")
+
+    def fake_run_winsw(config: AppConfig, command: str, require_admin: bool = False):
+        return ActionResult(True, "Started")
+
+    monkeypatch.setattr(runner, "_run_winsw", fake_run_winsw)
+
+    assert runner.get_status(config) == ("running", "Started")
+
+
 def test_stop_service_succeeds_when_service_is_not_installed(monkeypatch, tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     runner = ServiceRunner(tmp_path / "runtime")

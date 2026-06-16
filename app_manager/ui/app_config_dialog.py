@@ -207,8 +207,14 @@ class AppConfigDialog(QWizard):
         page, root_layout = self._new_page("Start", "Pick a template, then adjust only what differs.")
         layout = QFormLayout()
         root_layout.addLayout(layout)
-        self._add_combo(layout, "template", "Template", list(APP_PRESETS))
-        self._combo_box("template").currentTextChanged.connect(self._apply_preset)
+        templates = ["Current config"] if self._existing_config is not None else list(APP_PRESETS)
+        self._add_combo(layout, "template", "Template", templates)
+        template_box = self._combo_box("template")
+        if self._existing_config is None:
+            template_box.currentTextChanged.connect(self._apply_preset)
+        else:
+            template_box.setEnabled(False)
+            template_box.setToolTip("Existing configs are shown exactly as saved. Templates are only used when adding a new app.")
         self._add_line(layout, "id", "ID")
         self._line_edit("id").textChanged.connect(self._sync_derived_from_id)
         self._add_line(layout, "display_name", "Display name")
@@ -436,6 +442,8 @@ class AppConfigDialog(QWizard):
         self._refresh_review()
 
     def _apply_preset(self, preset_name: str) -> None:
+        if self._existing_config is not None or self._syncing_form:
+            return
         preset = APP_PRESETS.get(preset_name)
         if preset is None:
             return

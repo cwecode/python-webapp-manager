@@ -52,7 +52,7 @@ class ServiceRunner:
             return "error", result.message
 
         message = result.message.lower()
-        if "active" in message or "running" in message:
+        if "active" in message or "running" in message or "started" in message:
             return "running", result.message
         if "stopped" in message:
             return "stopped", result.message
