@@ -18,9 +18,9 @@ _SYSTEM_ACCOUNT_ALIASES = {
 }
 
 # Built-in Windows accounts that do not present a named user identity to
-# remote file servers. A service running under one of these cannot reach a
-# UNC share whose permissions are granted to a specific domain/server user,
-# which is the classic "service runs but the share is empty" symptom.
+# other machines. A service running under one of these only has the rights of
+# that built-in account, which is a common cause of "the service runs but
+# cannot reach a resource that needs a specific user" problems.
 _BUILTIN_LOCAL_ACCOUNTS = {
     "localsystem",
     "nt authority\\system",
@@ -126,14 +126,20 @@ def _is_builtin_account(account: str | None) -> bool:
 
 
 def network_account_warning(account: str | None) -> str | None:
-    """Warn when the (installed) account cannot reach user-restricted shares."""
+    """Warn when the (installed) account is a built-in account with limited rights.
+
+    Phrased generically: a built-in account only has its own rights and does not
+    present a named user identity to other machines, so anything the app needs that
+    is granted to a specific user (network shares, mapped drives, remote services)
+    can be out of reach.
+    """
     if not _is_builtin_account(account):
         return None
     label = account.strip() if account and account.strip() else "LocalSystem (default)"
     return (
-        f"service account '{label}' is a built-in local account and does not present a "
-        "domain/server user identity to file servers; UNC shares restricted to a specific "
-        "user are unreachable. Configure a user account that has access to the share."
+        f"service account '{label}' is a built-in local account; it only has that account's "
+        "rights and does not present a named user identity. Resources that are granted to a "
+        "specific user account may be unreachable. Configure a dedicated user account if the app needs one."
     )
 
 

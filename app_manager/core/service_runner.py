@@ -110,7 +110,7 @@ class ServiceRunner:
         service = ET.Element("service")
         ET.SubElement(service, "id").text = config.service_name
         ET.SubElement(service, "name").text = config.display_name
-        ET.SubElement(service, "description").text = f"Managed by App Manager: {config.display_name}"
+        ET.SubElement(service, "description").text = f"Python WebApp Manager: {config.display_name}"
         ET.SubElement(service, "executable").text = self._service_executable(config)
         ET.SubElement(service, "arguments").text = " ".join(self._service_arguments(config))
         ET.SubElement(service, "workingdirectory").text = str(config.repo_path)
@@ -195,8 +195,8 @@ class ServiceRunner:
         if not user:
             return
 
-        # WinSW v2 (the binary App Manager downloads from the latest stable
-        # release) expects <domain> + <user> with a bare account name. The
+        # WinSW v2 (the binary downloaded from the latest stable release)
+        # expects <domain> + <user> with a bare account name. The
         # combined <username>DOMAIN\user</username> form is WinSW v3 only and
         # is silently ignored by v2, which then installs the service as
         # LocalSystem - the account never takes effect.
@@ -240,9 +240,9 @@ class ServiceRunner:
             ]
         )
         if net_warning:
-            lines.append(f"Network access: WARNING - {net_warning}")
+            lines.append(f"Account scope: WARNING - {net_warning}")
         else:
-            lines.append("Network access: account can present a user identity to file shares")
+            lines.append("Account scope: dedicated user account (can present a user identity)")
         return ActionResult(match and net_warning is None, "\n".join(lines))
 
     def _with_account_warning(self, config: AppConfig, message: str) -> str:

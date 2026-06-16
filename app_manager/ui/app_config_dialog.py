@@ -527,7 +527,7 @@ def _entry_target_options(entry_kind: str) -> list[str]:
 
 def _mode_hint(mode: str) -> str:
     hints = {
-        "dev": "App Manager starts a normal local Python process.",
+        "dev": "Runs as a normal local Python process.",
         "prod": "Windows service through WinSW.",
         "both": "Local app process and Windows service are both available. Only one should run at a time on the same port.",
         "observed": "Shows status only; no start, stop, update, or service actions.",
@@ -551,7 +551,7 @@ def _confirm_validation_warnings(parent: QWidget, warnings: list[str]) -> bool:
     message = QMessageBox(parent)
     message.setIcon(QMessageBox.Icon.Warning)
     message.setWindowTitle("Validation Warnings")
-    message.setText("The app config can be saved, but App Manager found warnings.")
+    message.setText("The app config can be saved, but some warnings were found.")
     message.setInformativeText("\n".join(f"- {warning}" for warning in warnings) + "\n\nSave anyway?")
     message.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     message.setDefaultButton(QMessageBox.StandardButton.No)

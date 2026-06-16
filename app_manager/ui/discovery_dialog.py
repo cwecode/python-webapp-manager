@@ -380,7 +380,7 @@ def _confirm_validation_warnings(parent: QWidget, warnings: list[str]) -> bool:
     message = QMessageBox(parent)
     message.setIcon(QMessageBox.Icon.Warning)
     message.setWindowTitle("Validation Warnings")
-    message.setText("The app config can be saved, but App Manager found warnings.")
+    message.setText("The app config can be saved, but some warnings were found.")
     message.setInformativeText("\n".join(f"- {warning}" for warning in warnings) + "\n\nSave anyway?")
     message.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     message.setDefaultButton(QMessageBox.StandardButton.No)

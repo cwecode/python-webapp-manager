@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, QThread, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, QSize, QThread, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -28,9 +28,12 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTextBrowser,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+APP_TITLE = "Python WebApp Manager"
 
 from app_manager.core.installation import InstallationManager
 from app_manager.core.controller import AppController
@@ -48,7 +51,7 @@ from app_manager.ui.app_config_dialog import AppConfigDialog
 from app_manager.ui.discovery_dialog import DiscoveryDialog
 from app_manager.ui.log_viewer import LogViewer
 from app_manager.ui.manager_settings_dialog import ManagerSettingsDialog
-from app_manager.ui.theme import apply_dialog_style
+from app_manager.ui.theme import MESSAGE_BOX_STYLESHEET, apply_dialog_style
 
 
 @dataclass
@@ -108,7 +111,7 @@ class ActionWorker(QObject):
             self.failed.emit(str(exc))
 
 
-AUTO_REFRESH_INTERVAL_MS = 30_000
+AUTO_REFRESH_INTERVAL_MS = 12_000
 
 
 class MainWindow(QMainWindow):
@@ -138,10 +141,12 @@ class MainWindow(QMainWindow):
         self._action_worker: ActionWorker | None = None
         self._action_progress: QProgressDialog | None = None
         self._close_requested = False
+        self._row_actions: dict[str, tuple[QToolButton, QToolButton]] = {}
+        self._last_detail_sig: tuple | None = None
 
-        self.setWindowTitle("App Manager")
-        self.resize(1320, 760)
-        self.setMinimumSize(820, 520)
+        self.setWindowTitle(APP_TITLE)
+        self.resize(1180, 880)
+        self.setMinimumSize(960, 600)
         _apply_app_style(self)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -153,18 +158,32 @@ class MainWindow(QMainWindow):
         left_layout.setSpacing(8)
         splitter.addWidget(left_panel)
 
-        self.app_table = QTableWidget(0, 4)
-        self.app_table.setHorizontalHeaderLabels(["", "App", "Runtime", "Git"])
+        list_header = QHBoxLayout()
+        list_header.setContentsMargins(2, 0, 2, 0)
+        list_header.setSpacing(6)
+        apps_title = QLabel("Apps")
+        apps_title.setObjectName("listHeading")
+        list_header.addWidget(apps_title)
+        list_header.addStretch(1)
+        self.connect_app_button = _icon_button("+", "Connect a Python web app with the guided wizard.")
+        self.connect_app_button.clicked.connect(self.add_app)
+        list_header.addWidget(self.connect_app_button)
+        self.find_apps_button = _icon_button("⌕", "Scan local ports and services to import or diagnose existing apps.")
+        self.find_apps_button.clicked.connect(self.scan_services)
+        list_header.addWidget(self.find_apps_button)
+        left_layout.addLayout(list_header)
+
+        self.app_table = QTableWidget(0, 5)
+        self.app_table.setHorizontalHeaderLabels(["", "App", "Runtime", "Git", ""])
         self.app_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.app_table.setSelectionMode(QTableWidget.SingleSelection)
         self.app_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.app_table.setSortingEnabled(True)
+        self.app_table.setSortingEnabled(False)
         self.app_table.setAlternatingRowColors(True)
         self.app_table.verticalHeader().setVisible(False)
-        self.app_table.verticalHeader().setDefaultSectionSize(34)
+        self.app_table.verticalHeader().setDefaultSectionSize(36)
         self.app_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.app_table.setMinimumWidth(240)
-        self.app_table.setMaximumWidth(520)
+        self.app_table.setMinimumWidth(320)
         self.app_table.currentCellChanged.connect(lambda row, _column, _previous_row, _previous_column: self._render_current_app(row))
         header = self.app_table.horizontalHeader()
         header.setHighlightSections(False)
@@ -172,6 +191,7 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         left_layout.addWidget(self.app_table, 4)
 
         detail_group = QGroupBox("Details")
@@ -200,17 +220,24 @@ class MainWindow(QMainWindow):
         self.log_tabs.addTab(self.stderr_view, "stderr.log")
 
         right_panel = QWidget()
+        right_panel.setMaximumWidth(520)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(16, 12, 12, 12)
         right_layout.setSpacing(10)
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
         right_scroll.setFrameShape(QFrame.NoFrame)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         right_scroll.setWidget(right_panel)
+        right_scroll.setMinimumWidth(430)
+        right_scroll.setMaximumWidth(540)
         splitter.addWidget(right_scroll)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([430, 890])
+        # Left list takes the extra horizontal space; the right control panel
+        # stays just wide enough for its content.
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setSizes([720, 470])
 
         self.summary_label = QLabel("No app selected")
         self.summary_label.setObjectName("appTitle")
@@ -272,26 +299,13 @@ class MainWindow(QMainWindow):
         settings_grid.setVerticalSpacing(8)
         right_layout.addWidget(settings_tools)
 
-        self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.clicked.connect(lambda: self.reload_apps(show_errors=True))
-        settings_grid.addWidget(self.refresh_button, 0, 0)
-
-        self.add_app_button = QPushButton("Connect App")
-        self.add_app_button.setToolTip("Add a Python web app with the guided wizard.")
-        self.add_app_button.clicked.connect(self.add_app)
-        settings_grid.addWidget(self.add_app_button, 0, 1)
-
-        self.edit_app_button = QPushButton("Edit Config")
-        self.edit_app_button.clicked.connect(self.edit_app)
-        settings_grid.addWidget(self.edit_app_button, 0, 2)
-
         self.start_button = QPushButton("Start App Process")
-        self.start_button.setToolTip("Start the app as a local Python process managed by App Manager.")
+        self.start_button.setToolTip("Start the app as a local Python process.")
         self.start_button.clicked.connect(self.start_dev)
         app_action_grid.addWidget(self.start_button, 0, 0)
 
         self.stop_button = QPushButton("Stop App Process")
-        self.stop_button.setToolTip("Stop the local Python process started or attached by App Manager.")
+        self.stop_button.setToolTip("Stop the local Python process started or attached here.")
         self.stop_button.clicked.connect(self.stop_dev)
         app_action_grid.addWidget(self.stop_button, 0, 1)
 
@@ -300,10 +314,15 @@ class MainWindow(QMainWindow):
         self.restart_button.clicked.connect(self.restart_dev)
         app_action_grid.addWidget(self.restart_button, 1, 0)
 
+        self.health_button = QPushButton("Recheck Health")
+        self.health_button.setToolTip("Run the health check immediately instead of waiting for the next refresh.")
+        self.health_button.clicked.connect(self.check_health)
+        app_action_grid.addWidget(self.health_button, 1, 1)
+
         self.stop_external_button = QPushButton("Stop External Listener")
         self.stop_external_button.setToolTip("Force stop an unmanaged process currently listening on this app's configured port.")
         self.stop_external_button.clicked.connect(self.stop_external_process)
-        app_action_grid.addWidget(self.stop_external_button, 3, 0, 1, 2)
+        app_action_grid.addWidget(self.stop_external_button, 2, 0, 1, 2)
 
         self.service_note_label = QLabel(
             "Service actions always apply the current config and account."
@@ -325,66 +344,47 @@ class MainWindow(QMainWindow):
         self.diagnose_service_button = QPushButton("Service Diagnose")
         self.diagnose_service_button.setToolTip(
             "Show the installed service account, status, PID and binary path, and warn when the "
-            "installed account differs from the configured one or cannot reach network shares."
+            "installed account differs from the configured one."
         )
         self.diagnose_service_button.clicked.connect(self.diagnose_service)
         service_action_grid.addWidget(self.diagnose_service_button, 2, 0, 1, 2)
 
-        self.health_button = QPushButton("Recheck Health")
-        self.health_button.setToolTip("Run the health check immediately instead of waiting for the next refresh.")
-        self.health_button.clicked.connect(self.check_health)
-        app_action_grid.addWidget(self.health_button, 1, 1)
-
-        self.update_button = QPushButton("Update App")
-        self.update_button.setToolTip("Pull the selected app from GitHub and restart the active runtime when needed.")
-        self.update_button.clicked.connect(self.update_app)
-        app_action_grid.addWidget(self.update_button, 2, 0, 1, 2)
-
         self.open_logs_button = QPushButton("Open Logs")
         self.open_logs_button.clicked.connect(self.open_logs)
-        settings_grid.addWidget(self.open_logs_button, 1, 0)
-
-        self.scan_button = QPushButton("Find Running Apps")
-        self.scan_button.setToolTip("Scan local ports and services to import or diagnose existing apps.")
-        self.scan_button.clicked.connect(self.scan_services)
-        settings_grid.addWidget(self.scan_button, 1, 1)
+        settings_grid.addWidget(self.open_logs_button, 0, 0)
 
         self.settings_button = QPushButton("Settings")
         self.settings_button.clicked.connect(self.open_settings)
-        settings_grid.addWidget(self.settings_button, 1, 2)
+        settings_grid.addWidget(self.settings_button, 0, 1)
 
         self.github_help_button = QPushButton("GitHub / Update Help")
-        self.github_help_button.setToolTip("Explain how App Manager checks local installs against GitHub remotes.")
+        self.github_help_button.setToolTip("Explain how update checks compare local installs against their GitHub remotes.")
         self.github_help_button.clicked.connect(self.open_github_help)
-        settings_grid.addWidget(self.github_help_button, 2, 0, 1, 3)
+        settings_grid.addWidget(self.github_help_button, 1, 0, 1, 2)
 
-        self.self_update_button = QPushButton("Update App Manager")
-        self.self_update_button.setToolTip("Pull the latest App Manager version from GitHub and reinstall it.")
+        self.self_update_button = QPushButton("Update Manager")
+        self.self_update_button.setToolTip(f"Pull the latest {APP_TITLE} version from GitHub and reinstall it.")
         self.self_update_button.clicked.connect(self.update_app_manager)
-        settings_grid.addWidget(self.self_update_button, 3, 0, 1, 3)
+        settings_grid.addWidget(self.self_update_button, 2, 0, 1, 2)
+
         _set_button_role(self.open_app_button, "primary")
         _set_button_role(self.start_button, "primary")
         _set_button_role(self.stop_button, "danger")
         _set_button_role(self.stop_external_button, "danger")
         _set_button_role(self.health_button, "secondary")
-        _set_button_role(self.update_button, "warning")
+        _set_button_role(self.stop_service_button, "danger")
         for button in (
             self.restart_button,
             self.start_service_button,
             self.diagnose_service_button,
-            self.refresh_button,
-            self.add_app_button,
-            self.edit_app_button,
             self.open_logs_button,
-            self.scan_button,
             self.settings_button,
             self.github_help_button,
             self.self_update_button,
         ):
             _set_button_role(button, "secondary")
-        _set_button_role(self.stop_service_button, "danger")
 
-        self.scan_status_label = QLabel("Scan status: not started")
+        self.scan_status_label = QLabel("Ready")
         self.scan_status_label.setObjectName("statusLine")
         self.scan_status_label.setWordWrap(True)
         right_layout.addWidget(self.scan_status_label)
@@ -417,8 +417,6 @@ class MainWindow(QMainWindow):
 
         selected_app_id = self._selected_app_id()
         self._refresh_show_errors = show_errors
-        self.refresh_button.setEnabled(False)
-        self.scan_status_label.setText("Status: refreshing apps...")
         self._refresh_thread = QThread(self)
         self._refresh_worker = RefreshWorker(self.registry, self.controller, selected_app_id)
         self._refresh_worker.moveToThread(self._refresh_thread)
@@ -436,47 +434,61 @@ class MainWindow(QMainWindow):
             return
 
         apps, snapshots, selected_app_id = payload
-        self._apps = apps if isinstance(apps, list) else []
+        new_apps = apps if isinstance(apps, list) else []
+        # Stable order keeps per-row action widgets aligned across silent refreshes.
+        new_apps = sorted(new_apps, key=lambda config: config.display_name.lower())
         self._snapshots = snapshots if isinstance(snapshots, dict) else {}
         selected_app_id = selected_app_id if isinstance(selected_app_id, str) else None
 
-        self.app_table.setSortingEnabled(False)
-        self.app_table.clearContents()
-        self.app_table.setRowCount(len(self._apps))
-        for index, config in enumerate(self._apps):
-            snapshot = self._snapshots[config.id]
-            self._set_app_table_row(index, config, snapshot)
-        self.app_table.setSortingEnabled(True)
-        self.app_table.sortItems(0, Qt.AscendingOrder)
+        old_ids = [config.id for config in self._apps]
+        new_ids = [config.id for config in new_apps]
+        self._apps = new_apps
 
-        if self._apps:
-            self._select_app_id(selected_app_id or self._apps[0].id)
-        else:
+        if not new_apps:
+            self._row_actions.clear()
+            self.app_table.clearContents()
+            self.app_table.setRowCount(0)
             self.summary_label.setText(
-                f"No apps connected yet. Use Connect App for a normal setup or Find Running Apps for existing processes. "
-                f"Config folder: {self.registry.config_dir}"
+                "No apps connected yet. Use + above the list to connect an app, "
+                f"or the search button to import a running process. Config folder: {self.registry.config_dir}"
             )
             self.app_url_label.setText("")
             self._reset_cards()
             self.stdout_view.set_log_path(None)
             self.stderr_view.set_log_path(None)
             self._sync_buttons(None, None)
-        self.scan_status_label.setText("Status: ready")
+            self._last_detail_sig = None
+            return
+
+        if new_ids == old_ids and self.app_table.rowCount() == len(new_apps):
+            self._refresh_table_rows()
+            current_row = self.app_table.currentRow()
+            current_id = self._selected_app_id()
+            target_id = selected_app_id if selected_app_id in new_ids else (current_id or new_ids[0])
+            if current_id == target_id and current_row >= 0:
+                self._maybe_render_detail(current_row)
+            else:
+                self._select_app_id(target_id)
+        else:
+            self._populate_table_full()
+            self._select_app_id(selected_app_id if selected_app_id in new_ids else new_ids[0])
 
     def _on_refresh_failed(self, message: str) -> None:
         self._apps = []
         self._snapshots = {}
+        self._row_actions.clear()
         self.app_table.clearContents()
         self.app_table.setRowCount(0)
         self.app_url_label.setText("")
         self._reset_cards()
         self._sync_buttons(None, None)
-        self.scan_status_label.setText(f"Status refresh failed: {message}")
+        self._last_detail_sig = None
+        # Stay silent on background polls; only surface failures on explicit reloads.
         if self._refresh_show_errors:
+            self.scan_status_label.setText(f"Refresh failed: {message}")
             self._show_error("Configuration Error", message)
 
     def _cleanup_refresh(self) -> None:
-        self.refresh_button.setEnabled(True)
         if self._refresh_worker is not None:
             self._refresh_worker.deleteLater()
             self._refresh_worker = None
@@ -484,6 +496,29 @@ class MainWindow(QMainWindow):
             self._refresh_thread.deleteLater()
             self._refresh_thread = None
         self._finish_pending_close()
+
+    def _populate_table_full(self) -> None:
+        self._row_actions.clear()
+        self.app_table.setUpdatesEnabled(False)
+        self.app_table.clearContents()
+        self.app_table.setRowCount(len(self._apps))
+        for row, config in enumerate(self._apps):
+            self._build_table_row(row, config, self._snapshots[config.id])
+        self.app_table.setUpdatesEnabled(True)
+
+    def _refresh_table_rows(self) -> None:
+        self.app_table.setUpdatesEnabled(False)
+        for row, config in enumerate(self._apps):
+            self._update_table_row(row, config, self._snapshots[config.id])
+        self.app_table.setUpdatesEnabled(True)
+
+    def _maybe_render_detail(self, row: int) -> None:
+        context = self._context_for_row(row)
+        if context is None:
+            return
+        if self._detail_signature(context.config, context.snapshot) == self._last_detail_sig:
+            return
+        self._render_current_app(row)
 
     def start_dev(self) -> None:
         self._run_selected_action("Start App Process", self.controller.start_dev)
@@ -501,7 +536,47 @@ class MainWindow(QMainWindow):
         self._run_selected_action("Recheck Health", self.controller.check_health)
 
     def update_app(self) -> None:
+        config = self._selected_config()
+        if not config:
+            return
+        if not self._confirm_update_if_local_changes(config):
+            return
         self._run_selected_action("Update App", self.controller.update_app)
+
+    def _local_change_reason(self, snapshot: AppSnapshot | None) -> str | None:
+        """Describe why updating this app could disturb unsaved local work, or None if safe."""
+        if snapshot is None:
+            return None
+        detail = (snapshot.git_detail or "").lower()
+        if snapshot.git_state == "dirty":
+            return "The working tree has uncommitted local changes."
+        if snapshot.git_state == "error":
+            return f"The Git state could not be determined ({snapshot.git_detail})."
+        if "ahead" in detail:
+            return "The local branch has commit(s) that are not pushed to GitHub."
+        if snapshot.git_state == "update_available" and "local change" in detail:
+            return "There are local changes and the branch is behind GitHub."
+        return None
+
+    def _confirm_update_if_local_changes(self, config: AppConfig) -> bool:
+        reason = self._local_change_reason(self._snapshots.get(config.id))
+        if reason is None:
+            return True
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Icon.Warning)
+        message.setWindowTitle("Update with local changes?")
+        message.setText(f"'{config.display_name}' has local changes that are not on GitHub.")
+        message.setInformativeText(
+            f"{reason}\n\n"
+            "Update runs 'git pull --ff-only --autostash'. Local commits are never overwritten "
+            "(a diverged branch makes the update abort), and uncommitted edits are stashed and "
+            "re-applied — but a conflict can still interrupt that re-apply.\n\n"
+            "Update anyway?"
+        )
+        message.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        message.setDefaultButton(QMessageBox.StandardButton.No)
+        message.setStyleSheet(MESSAGE_BOX_STYLESHEET)
+        return message.exec() == QMessageBox.StandardButton.Yes
 
     def start_service(self) -> None:
         self._run_selected_action("Apply + Start Service", self.controller.start_service)
@@ -552,25 +627,25 @@ class MainWindow(QMainWindow):
         venv_app_manager = root_dir / ".venv" / "Scripts" / "app-manager.exe"
         update_script = root_dir / "update-app-manager.cmd"
         if not (root_dir / ".git").exists():
-            self._show_error("Update App Manager", f"App Manager root is not a Git repository:\n{root_dir}")
+            self._show_error(f"Update {APP_TITLE}", f"{APP_TITLE} root is not a Git repository:\n{root_dir}")
             return
         if not venv_python.exists():
-            self._show_error("Update App Manager", f"Virtual environment Python not found:\n{venv_python}")
+            self._show_error(f"Update {APP_TITLE}", f"Virtual environment Python not found:\n{venv_python}")
             return
 
         confirm = QMessageBox.question(
             self,
-            "Update App Manager",
-            "This opens a command window, pulls the latest App Manager version, reinstalls it, "
-            "then starts App Manager again. The current window will close. Continue?",
+            f"Update {APP_TITLE}",
+            f"This opens a command window, pulls the latest {APP_TITLE} version, reinstalls it, "
+            f"then starts {APP_TITLE} again. The current window will close. Continue?",
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
         script = f"""@echo off
-title Update App Manager
+title Update {APP_TITLE}
 cd /d "{root_dir}"
-echo Updating App Manager in {root_dir}
+echo Updating {APP_TITLE} in {root_dir}
 echo.
 echo [1/3] Pulling latest version from GitHub...
 git pull
@@ -580,7 +655,7 @@ echo [2/3] Reinstalling package in .venv...
 "{venv_python}" -m pip install -e .
 if errorlevel 1 goto failed
 echo.
-echo [3/3] Starting App Manager...
+echo [3/3] Starting {APP_TITLE}...
 start "" "{venv_app_manager}"
 echo.
 echo Update finished. You can close this window.
@@ -601,7 +676,7 @@ pause
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
             )
         except OSError as exc:
-            self._show_error("Update App Manager", str(exc))
+            self._show_error(f"Update {APP_TITLE}", str(exc))
             return
         self.close()
 
@@ -653,8 +728,8 @@ pause
         if self._scan_thread is not None:
             return
 
-        self.scan_button.setEnabled(False)
-        self.scan_status_label.setText("Scan status: scanning local ports and services...")
+        self.find_apps_button.setEnabled(False)
+        self.scan_status_label.setText("Scanning local ports and services...")
         self._scan_progress = QProgressDialog("Scanning local ports and services...", "", 0, 0, self)
         self._scan_progress.setWindowTitle("Find Running Apps")
         self._scan_progress.setCancelButton(None)
@@ -752,7 +827,7 @@ pause
         if self._scan_thread is not None:
             self._scan_thread.deleteLater()
             self._scan_thread = None
-        self.scan_button.setEnabled(True)
+        self.find_apps_button.setEnabled(True)
         self._finish_pending_close()
 
     def _save_and_reload_manager_config(self, manager_config: ManagerConfig) -> None:
@@ -820,10 +895,12 @@ pause
             self.app_url_label.setText("")
             self._reset_cards()
             self._sync_buttons(None, None)
+            self._last_detail_sig = None
             return
 
         config = context.config
         snapshot = context.snapshot
+        self._last_detail_sig = self._detail_signature(config, snapshot)
         management_state = self._management_state(config, snapshot)
         self.summary_label.setText(config.display_name)
         app_url = self._app_url(config)
@@ -863,9 +940,9 @@ pause
 
     def _show_result(self, ok: bool, message: str) -> None:
         if ok:
-            QMessageBox.information(self, "App Manager", message)
+            QMessageBox.information(self, APP_TITLE, message)
         else:
-            self._show_error("App Manager", message)
+            self._show_error(APP_TITLE, message)
 
     def _show_error(self, title: str, message: str) -> None:
         QMessageBox.critical(self, title, message)
@@ -899,6 +976,9 @@ pause
         self._action_progress.setWindowModality(Qt.WindowModal)
         self._action_progress.show()
         self._sync_buttons(None, None)
+        # Force the post-action refresh to re-render the detail panel (and thus
+        # re-enable controls) even if the snapshot signature is unchanged.
+        self._last_detail_sig = None
 
         self._action_thread = QThread(self)
         self._action_worker = ActionWorker(action_name, config, handler)
@@ -924,7 +1004,7 @@ pause
         self.reload_apps(show_errors=False)
 
     def _on_action_failed(self, message: str) -> None:
-        self._show_error("App Manager", message)
+        self._show_error(APP_TITLE, message)
         self.scan_status_label.setText(f"Action failed: {message}")
         self.reload_apps(show_errors=False)
 
@@ -949,32 +1029,30 @@ pause
             self.close()
 
     def _sync_buttons(self, config: AppConfig | None, snapshot: AppSnapshot | None) -> None:
+        self.connect_app_button.setEnabled(True)
+        self.find_apps_button.setEnabled(self._scan_thread is None)
+        self.settings_button.setEnabled(True)
+        self.github_help_button.setEnabled(True)
+        self.self_update_button.setEnabled(True)
+
         if config is None or snapshot is None:
             for button in (
                 self.start_button,
                 self.stop_button,
                 self.stop_external_button,
                 self.restart_button,
-                self.edit_app_button,
                 self.open_app_button,
                 self.start_service_button,
                 self.stop_service_button,
                 self.diagnose_service_button,
                 self.health_button,
-                self.update_button,
                 self.open_logs_button,
             ):
                 button.setEnabled(False)
-            self.add_app_button.setEnabled(True)
-            self.edit_app_button.setEnabled(False)
-            self.update_button.setText("Update App")
-            self.update_button.setToolTip("")
-            _set_button_role(self.update_button, "secondary")
-            self.scan_button.setEnabled(self._scan_thread is None)
-            self.settings_button.setEnabled(True)
-            self.github_help_button.setEnabled(True)
-            self.self_update_button.setEnabled(True)
+            self._set_row_actions_enabled(False)
             return
+
+        self._set_row_actions_enabled(True)
 
         dev_supported = config.mode in {"dev", "both"}
         prod_supported = config.mode in {"prod", "both"}
@@ -982,8 +1060,6 @@ pause
         external_active = snapshot.active_mode == "unknown" and "external pid" in snapshot.status_detail.lower()
         runtime_active = snapshot.active_mode in {"dev", "prod", "unknown"}
 
-        self.add_app_button.setEnabled(True)
-        self.edit_app_button.setEnabled(True)
         self.open_app_button.setEnabled(True)
         self.start_button.setEnabled(dev_supported and not runtime_active)
         self.stop_button.setEnabled(snapshot.active_mode == "dev")
@@ -993,26 +1069,49 @@ pause
         self.stop_service_button.setEnabled(snapshot.active_mode == "prod")
         self.diagnose_service_button.setEnabled(prod_supported)
         self.health_button.setEnabled(True)
-        self.update_button.setEnabled(not observed)
-        if snapshot.git_state == "update_available":
-            self.update_button.setText("Update Available")
-            self.update_button.setToolTip(snapshot.git_detail)
-            _set_button_role(self.update_button, "warning")
-        elif snapshot.git_state in {"dirty", "error"}:
-            self.update_button.setText("Update App")
-            self.update_button.setToolTip(snapshot.git_detail if snapshot.git_state != "unknown" else "")
-            _set_button_role(self.update_button, "danger")
-        else:
-            self.update_button.setText("Update App")
-            self.update_button.setToolTip(snapshot.git_detail if snapshot.git_state != "unknown" else "")
-            _set_button_role(self.update_button, "secondary")
         self.open_logs_button.setEnabled(True)
-        self.scan_button.setEnabled(self._scan_thread is None)
-        self.settings_button.setEnabled(True)
-        self.github_help_button.setEnabled(True)
-        self.self_update_button.setEnabled(True)
 
-    def _set_app_table_row(self, row: int, config: AppConfig, snapshot: AppSnapshot) -> None:
+    def _set_row_actions_enabled(self, enabled: bool) -> None:
+        for app_id, (edit_btn, update_btn) in self._row_actions.items():
+            edit_btn.setEnabled(enabled)
+            config = self._config_by_id(app_id)
+            update_btn.setEnabled(enabled and config is not None and config.mode != "observed")
+
+    def _config_by_id(self, app_id: str) -> AppConfig | None:
+        for config in self._apps:
+            if config.id == app_id:
+                return config
+        return None
+
+    def _detail_signature(self, config: AppConfig, snapshot: AppSnapshot) -> tuple:
+        return (
+            config.id,
+            config.display_name,
+            config.host,
+            config.port,
+            config.mode,
+            snapshot.status,
+            snapshot.status_detail,
+            snapshot.health,
+            snapshot.health_detail,
+            snapshot.active_mode,
+            snapshot.git_state,
+            snapshot.git_detail,
+            snapshot.runtime_started_at,
+            snapshot.last_action.name if snapshot.last_action is not None else None,
+        )
+
+    def _build_table_row(self, row: int, config: AppConfig, snapshot: AppSnapshot) -> None:
+        self._write_row_cells(row, config, snapshot)
+        self.app_table.setCellWidget(row, 4, self._make_row_actions(config, snapshot))
+
+    def _update_table_row(self, row: int, config: AppConfig, snapshot: AppSnapshot) -> None:
+        self._write_row_cells(row, config, snapshot)
+        actions = self._row_actions.get(config.id)
+        if actions is not None:
+            self._style_update_button(actions[1], snapshot)
+
+    def _write_row_cells(self, row: int, config: AppConfig, snapshot: AppSnapshot) -> None:
         values = [
             _traffic_light_label(snapshot),
             config.display_name,
@@ -1021,7 +1120,12 @@ pause
         ]
         context = AppContext(config=config, snapshot=snapshot)
         for column, value in enumerate(values):
-            item = QTableWidgetItem(value)
+            item = self.app_table.item(row, column)
+            if item is None:
+                item = QTableWidgetItem(value)
+                self.app_table.setItem(row, column, item)
+            else:
+                item.setText(value)
             if column == 0:
                 item.setTextAlignment(Qt.AlignCenter)
                 _apply_item_status_style(item, _overall_color(snapshot), "overall status")
@@ -1035,7 +1139,46 @@ pause
             if column == 3:
                 _apply_item_status_style(item, _git_color(snapshot.git_state), snapshot.git_detail)
                 item.setToolTip(snapshot.git_detail)
-            self.app_table.setItem(row, column, item)
+
+    def _make_row_actions(self, config: AppConfig, snapshot: AppSnapshot) -> QWidget:
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setSpacing(2)
+        edit_btn = _row_tool_button("🔧", "Edit this app's configuration.")
+        edit_btn.clicked.connect(lambda _checked=False, app_id=config.id: self._edit_app_row(app_id))
+        update_btn = _row_tool_button("⟳", "Update this app from GitHub.")
+        update_btn.clicked.connect(lambda _checked=False, app_id=config.id: self._update_app_row(app_id))
+        layout.addWidget(edit_btn)
+        layout.addWidget(update_btn)
+        self._row_actions[config.id] = (edit_btn, update_btn)
+        self._style_update_button(update_btn, snapshot)
+        return container
+
+    def _style_update_button(self, button: QToolButton, snapshot: AppSnapshot) -> None:
+        if snapshot.git_state == "update_available":
+            button.setText("⬆")
+            button.setToolTip(f"Update available — {snapshot.git_detail}")
+            button.setProperty("rowAction", "warning")
+        elif snapshot.git_state in {"dirty", "error"}:
+            button.setText("⟳")
+            button.setToolTip(f"Update this app from GitHub. ({snapshot.git_detail})")
+            button.setProperty("rowAction", "danger")
+        else:
+            button.setText("⟳")
+            detail = f" ({snapshot.git_detail})" if snapshot.git_state != "unknown" else ""
+            button.setToolTip(f"Update this app from GitHub.{detail}")
+            button.setProperty("rowAction", "normal")
+        button.style().unpolish(button)
+        button.style().polish(button)
+
+    def _edit_app_row(self, app_id: str) -> None:
+        self._select_app_id(app_id)
+        self.edit_app()
+
+    def _update_app_row(self, app_id: str) -> None:
+        self._select_app_id(app_id)
+        self.update_app()
 
     def _context_for_row(self, row: int) -> AppContext | None:
         if row < 0:
@@ -1262,6 +1405,26 @@ def _set_button_role(button: QPushButton, role: str) -> None:
     button.style().polish(button)
 
 
+def _icon_button(glyph: str, tooltip: str) -> QToolButton:
+    button = QToolButton()
+    button.setObjectName("iconButton")
+    button.setText(glyph)
+    button.setToolTip(tooltip)
+    button.setCursor(Qt.PointingHandCursor)
+    button.setFixedSize(QSize(30, 28))
+    return button
+
+
+def _row_tool_button(glyph: str, tooltip: str) -> QToolButton:
+    button = QToolButton()
+    button.setObjectName("rowActionButton")
+    button.setText(glyph)
+    button.setToolTip(tooltip)
+    button.setCursor(Qt.PointingHandCursor)
+    button.setFixedSize(QSize(26, 26))
+    return button
+
+
 def _show_github_help(parent: QWidget) -> None:
     dialog = QDialog(parent)
     dialog.setWindowTitle("GitHub and update checks")
@@ -1277,9 +1440,9 @@ def _show_github_help(parent: QWidget) -> None:
     content.setOpenExternalLinks(True)
     content.setHtml(
         """
-        <h1>How App Manager checks GitHub updates</h1>
+        <h1>How update checks work against GitHub</h1>
         <p>
-          App Manager does not compare against a random folder on GitHub.
+          This manager does not compare against a random folder on GitHub.
           Each connected app needs a <b>local Git clone on this machine</b>.
           The app then asks Git to compare that local clone with its remote branch,
           usually <code>origin/main</code>.
@@ -1287,7 +1450,7 @@ def _show_github_help(parent: QWidget) -> None:
 
         <h2>Normal setup</h2>
         <ol>
-          <li>Clone the web app repository on the server or workstation that runs App Manager.</li>
+          <li>Clone the web app repository on the server or workstation that runs this manager.</li>
           <li>Use that clone as <code>repo_path</code> when connecting the app.</li>
           <li>Set <code>branch</code> to the deployed branch, for example <code>main</code>.</li>
           <li>Confirm that <code>git fetch origin main --prune</code> works in that folder.</li>
@@ -1298,12 +1461,12 @@ git remote -v
 git fetch origin main --prune
 git status</pre>
 
-        <h2>What Refresh does</h2>
+        <h2>What the background check does</h2>
         <p>
-          Refresh runs <code>git fetch origin &lt;branch&gt; --prune</code> and then compares
-          <code>HEAD</code> with <code>origin/&lt;branch&gt;</code>.
-          If the local install is behind the remote branch, App Manager shows
-          <b>update available</b>.
+          The manager periodically runs <code>git fetch origin &lt;branch&gt; --prune</code> and then
+          compares <code>HEAD</code> with <code>origin/&lt;branch&gt;</code>.
+          If the local install is behind the remote branch, the app row shows an
+          <b>update available</b> marker on its update button.
         </p>
 
         <h2>What Update does</h2>
@@ -1322,19 +1485,19 @@ git pull --ff-only --autostash origin &lt;branch&gt;</pre>
 
         <h2>Private GitHub repositories</h2>
         <p>
-          Private repositories work as long as Git can fetch them outside App Manager.
+          Private repositories work as long as Git can fetch them outside this manager.
           The recommended options are GitHub Desktop, Git Credential Manager, or the GitHub CLI:
         </p>
         <pre>gh auth login
 gh repo clone OWNER/PRIVATE_REPO C:\\Python\\your_web_app</pre>
         <p>
-          App Manager does not need your GitHub password or token. It uses the credentials
+          This manager does not need your GitHub password or token. It uses the credentials
           already configured for the Windows user running the app.
         </p>
 
         <h2>Server note</h2>
         <p>
-          If App Manager is later run under a Windows service account, GitHub access must also
+          If this manager is later run under a Windows service account, GitHub access must also
           work for that same account. A clone that works for your interactive user may not work
           for a different service user until credentials or SSH keys are configured there too.
         </p>
@@ -1382,6 +1545,53 @@ def _apply_app_style(window: QWidget) -> None:
             border-bottom: 1px solid #3a424a;
             padding: 7px 8px;
             font-weight: 600;
+        }
+        QLabel#listHeading {
+            color: #cbd5e1;
+            font-size: 13px;
+            font-weight: 700;
+            padding: 2px 2px;
+            letter-spacing: 0.4px;
+        }
+        QToolButton#iconButton {
+            background: #252a2f;
+            color: #eef2f6;
+            border: 1px solid #3a424a;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        QToolButton#iconButton:hover {
+            background: #2d8a5d;
+            border-color: #2d8a5d;
+        }
+        QToolButton#iconButton:disabled {
+            color: #717c89;
+            background: #202326;
+            border-color: #30363d;
+        }
+        QToolButton#rowActionButton {
+            background: transparent;
+            color: #aeb8c4;
+            border: 1px solid transparent;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        QToolButton#rowActionButton:hover {
+            background: #303740;
+            color: #ffffff;
+            border-color: #4b5563;
+        }
+        QToolButton#rowActionButton:disabled {
+            color: #5b6573;
+        }
+        QToolButton#rowActionButton[rowAction="warning"] {
+            color: #f0c674;
+            border-color: #6b5320;
+        }
+        QToolButton#rowActionButton[rowAction="danger"] {
+            color: #e88;
+            border-color: #6f2429;
         }
         QLabel#appTitle {
             color: #f7fafc;

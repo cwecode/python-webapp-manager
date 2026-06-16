@@ -235,7 +235,7 @@ class ProcessRunner:
         hint = ""
         if _looks_like_access_denied(raw_message):
             hint = (
-                "\nHint: Windows denied termination. Start App Manager as Administrator, "
+                "\nHint: Windows denied termination. Start this manager as Administrator, "
                 "or stop the owning Windows service/user session first."
             )
 

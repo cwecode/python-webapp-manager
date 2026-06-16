@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from app_manager.core.controller import AppController
@@ -17,15 +18,27 @@ from app_manager.ui.main_window import MainWindow
 from app_manager.ui.manager_settings_dialog import ManagerSettingsDialog
 
 
+APP_TITLE = "Python WebApp Manager"
+
+
 def main() -> int:
     root_dir = Path(__file__).resolve().parent.parent
     app = QApplication(sys.argv)
+    app.setApplicationName(APP_TITLE)
+    # Give the whole app a base font with an explicit point size. Without this,
+    # widgets/styles that derive a font from the default app font (e.g. wizard
+    # titles) can hit a pixel-only font whose pointSize() is -1 and emit the
+    # harmless "QFont::setPointSize: Point size <= 0 (-1)" warning.
+    base_font = app.font()
+    if base_font.pointSize() <= 0:
+        base_font.setPointSize(9)
+        app.setFont(base_font)
     manager_config_path = root_dir / "configs" / "manager.json"
     installation_manager = InstallationManager(manager_config_path, root_dir)
     try:
         manager_config = installation_manager.load_or_default()
     except (ConfigValidationError, OSError, ValueError) as exc:
-        QMessageBox.critical(None, "App Manager", f"Failed to load manager config:\n{exc}")
+        QMessageBox.critical(None, APP_TITLE, f"Failed to load manager config:\n{exc}")
         return 1
 
     if installation_manager.setup_required(manager_config):
@@ -62,7 +75,7 @@ def _run_initial_setup(
         installation_manager.ensure_layout(selected_config)
         installation_manager.save(selected_config)
     except OSError as exc:
-        QMessageBox.critical(None, "App Manager", f"Failed to complete initial setup:\n{exc}")
+        QMessageBox.critical(None, APP_TITLE, f"Failed to complete initial setup:\n{exc}")
         return None
     return selected_config
 

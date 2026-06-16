@@ -129,4 +129,4 @@ def test_stop_listening_process_reports_access_denied_context(monkeypatch, tmp_p
     assert "Zugriff verweigert" in result.message
     assert "Process context" in result.message
     assert "owner=DOMAIN\\demo" in result.message
-    assert "Start App Manager as Administrator" in result.message
+    assert "Start this manager as Administrator" in result.message

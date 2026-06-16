@@ -356,7 +356,7 @@ def test_diagnose_reports_account_mismatch(tmp_path: Path) -> None:
     assert result.ok is False
     assert "SERVICE_START_NAME): LocalSystem" in result.message
     assert "Account match: NO" in result.message
-    assert "Network access: WARNING" in result.message
+    assert "Account scope: WARNING" in result.message
 
 
 def test_diagnose_reports_healthy_domain_account(tmp_path: Path) -> None:
