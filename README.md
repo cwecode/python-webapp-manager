@@ -74,6 +74,8 @@ Use `Find Running Apps` when an app is already running and you need to identify 
 - `both`: Both options are configured, but only one should run on the same port at the same time.
 - `observed`: App Manager only observes health/port state and does not start, stop or update the app.
 
+For apps that need network shares, configure the service account on the app's Service page. Example for a local terminal-server user: `.\Jobserver`. Example for a domain user: `DOMAIN\Jobserver`.
+
 ## Updates
 
 For connected apps, `Update App` runs:
@@ -93,6 +95,8 @@ If an app was running, App Manager stops it before the update and starts it agai
 - `configs/manager.json`: local machine config, ignored by Git.
 - `configs/apps/*.json`: local connected app configs, ignored by Git.
 - `configs/apps/*.example.json`: example app configs that can be committed.
+
+App configs may contain `service_account` and `service_password` for WinSW. Protect the local manager root because those values are written to the app config and WinSW XML when used.
 
 ## More Help
 

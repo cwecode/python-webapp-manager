@@ -74,6 +74,7 @@ class ServiceRunner:
         ET.SubElement(service, "logmode").text = "roll"
         ET.SubElement(service, "onfailure", action="restart")
         ET.SubElement(service, "startmode").text = "Automatic" if config.autostart_prod else "Manual"
+        self._append_service_account(service, config)
 
         xml_path.write_text(ET.tostring(service, encoding="unicode"), encoding="utf-8")
         return xml_path
@@ -141,6 +142,16 @@ class ServiceRunner:
         if waitress_exe.exists():
             return str(waitress_exe)
         return "waitress-serve"
+
+    def _append_service_account(self, service: ET.Element, config: AppConfig) -> None:
+        if not config.service_account:
+            return
+
+        service_account = ET.SubElement(service, "serviceaccount")
+        ET.SubElement(service_account, "username").text = config.service_account
+        if config.service_password:
+            ET.SubElement(service_account, "password").text = config.service_password
+        ET.SubElement(service_account, "allowservicelogon").text = "true"
 
     def _is_admin(self) -> bool:
         try:

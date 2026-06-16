@@ -46,6 +46,8 @@ def _config(tmp_path: Path) -> AppConfig:
         requirements_file=tmp_path / "requirements.txt",
         init_command=None,
         service_name="demo-service",
+        service_account=None,
+        service_password=None,
         log_dir=tmp_path / "logs" / "demo",
         winsw_exe_path=tmp_path / "tools" / "WinSW-x64.exe",
         autostart_prod=True,
@@ -63,3 +65,4 @@ def test_edit_dialog_shows_existing_config_without_applying_template_defaults(tm
     assert dialog._combo_box("entry_target").currentText() == "server:app"
     assert dialog._line_edit("host").text() == "0.0.0.0"
     assert dialog._spin_box("port").value() == 9090
+    assert dialog._line_edit("service_account").text() == ""

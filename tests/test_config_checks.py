@@ -30,6 +30,8 @@ def _make_config(tmp_path: Path, host: str) -> AppConfig:
         requirements_file=None,
         init_command=None,
         service_name="demo-service",
+        service_account=None,
+        service_password=None,
         log_dir=tmp_path / "logs",
         winsw_exe_path=tmp_path / "winsw.exe",
         autostart_prod=False,

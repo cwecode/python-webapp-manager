@@ -33,6 +33,8 @@ def _make_config(tmp_path: Path) -> AppConfig:
         requirements_file=None,
         init_command=None,
         service_name="demo-service",
+        service_account=None,
+        service_password=None,
         log_dir=tmp_path / "logs",
         winsw_exe_path=winsw_path,
         autostart_prod=False,
@@ -51,6 +53,23 @@ def test_write_xml_uses_waitress_serve_executable(tmp_path: Path) -> None:
 
     assert service.findtext("executable") == str(waitress_exe)
     assert service.findtext("arguments") == "--host 127.0.0.1 --port 8080 wsgi:app"
+    assert service.find("serviceaccount") is None
+
+
+def test_write_xml_includes_custom_service_account(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.service_account = r".\Jobserver"
+    config.service_password = "secret"
+    runner = ServiceRunner(tmp_path / "runtime")
+
+    xml_path = runner.write_xml(config)
+    service = ET.fromstring(xml_path.read_text(encoding="utf-8"))
+    service_account = service.find("serviceaccount")
+
+    assert service_account is not None
+    assert service_account.findtext("username") == r".\Jobserver"
+    assert service_account.findtext("password") == "secret"
+    assert service_account.findtext("allowservicelogon") == "true"
 
 
 def test_run_winsw_uses_service_named_wrapper_next_to_xml(monkeypatch, tmp_path: Path) -> None:

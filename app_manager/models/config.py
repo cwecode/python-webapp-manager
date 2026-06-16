@@ -32,6 +32,8 @@ class AppConfig:
     requirements_file: Path | None
     init_command: str | None
     service_name: str
+    service_account: str | None
+    service_password: str | None
     log_dir: Path
     winsw_exe_path: Path
     autostart_prod: bool
@@ -102,6 +104,14 @@ class AppConfig:
         if init_command is not None and (not isinstance(init_command, str) or not init_command.strip()):
             errors.append("init_command must be a non-empty string when provided")
 
+        service_account = payload.get("service_account")
+        if service_account is not None and not isinstance(service_account, str):
+            errors.append("service_account must be a string when provided")
+
+        service_password = payload.get("service_password")
+        if service_password is not None and not isinstance(service_password, str):
+            errors.append("service_password must be a string when provided")
+
         if errors:
             raise ConfigValidationError(errors)
 
@@ -126,6 +136,8 @@ class AppConfig:
             requirements_file=_resolve_path(resolved_base, requirements_file) if requirements_file else None,
             init_command=init_command.strip() if isinstance(init_command, str) else None,
             service_name=payload["service_name"].strip(),
+            service_account=_optional_text(payload.get("service_account")),
+            service_password=_optional_text(payload.get("service_password")),
             log_dir=_resolve_path(resolved_base, payload["log_dir"]),
             winsw_exe_path=_resolve_path(resolved_base, payload["winsw_exe_path"]),
             autostart_prod=autostart_prod,
@@ -144,3 +156,10 @@ def _resolve_path(base_dir: Path, value: str) -> Path:
     if path.is_absolute():
         return path
     return (base_dir / path).resolve()
+
+
+def _optional_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None

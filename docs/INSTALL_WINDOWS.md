@@ -89,6 +89,15 @@ gh auth login
 - Services are created through WinSW.
 - App Manager can download or reuse an existing WinSW executable.
 - Do not run a local app process and a Windows service on the same host/port at the same time.
+- If the service must access a UNC path or other network share, configure a service account that has those permissions.
+- After changing a service account, stop and uninstall the existing service, then install and start it again.
+
+Example service account values:
+
+```text
+Local server user: .\Jobserver
+Domain user:       DOMAIN\Jobserver
+```
 
 ## Troubleshooting
 

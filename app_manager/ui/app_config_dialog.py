@@ -252,6 +252,9 @@ class AppConfigDialog(QWizard):
         layout = QFormLayout()
         root_layout.addLayout(layout)
         self._add_line(layout, "service_name", "Service name")
+        self._add_line(layout, "service_account", "Service account")
+        self._add_line(layout, "service_password", "Service password")
+        self._line_edit("service_password").setEchoMode(QLineEdit.EchoMode.Password)
         self._add_path_line(layout, "log_dir", "Log dir", "folder")
         self._add_path_line(layout, "winsw_exe_path", "WinSW exe path", "file", "Executable (*.exe);;All files (*)")
         self._add_check(layout, "autostart_prod", "Autostart prod")
@@ -283,6 +286,8 @@ class AppConfigDialog(QWizard):
         self._line_edit("host").setText("127.0.0.1")
         self._spin_box("port").setValue(8000)
         self._line_edit("service_name").setText(default_id)
+        self._line_edit("service_account").setText("")
+        self._line_edit("service_password").setText("")
         self._line_edit("log_dir").setText(str(self._manager_config.logs_dir / default_id))
         self._line_edit("winsw_exe_path").setText(str(self._manager_config.winsw_exe_path))
         self._last_auto_id = default_id
@@ -309,6 +314,8 @@ class AppConfigDialog(QWizard):
         self._line_edit("requirements_file").setText(str(config.requirements_file) if config.requirements_file else "")
         self._line_edit("init_command").setText(config.init_command or "")
         self._line_edit("service_name").setText(config.service_name)
+        self._line_edit("service_account").setText(config.service_account or "")
+        self._line_edit("service_password").setText(config.service_password or "")
         self._line_edit("log_dir").setText(str(config.log_dir))
         self._line_edit("winsw_exe_path").setText(str(config.winsw_exe_path))
         self._check_box("autostart_prod").setChecked(config.autostart_prod)
@@ -332,7 +339,8 @@ class AppConfigDialog(QWizard):
             f"Entry: {self._combo_box('entry_kind').currentText()} {self._combo_box('entry_target').currentText().strip()}\n"
             f"Bind: {self._line_edit('host').text().strip()}:{self._spin_box('port').value()}\n"
             f"Health: {self._line_edit('health_url').text().strip() or '-'}\n"
-            f"Service: {self._line_edit('service_name').text().strip()}"
+            f"Service: {self._line_edit('service_name').text().strip()}\n"
+            f"Service account: {self._line_edit('service_account').text().strip() or '-'}"
         )
 
     def _config_from_form(self) -> AppConfig | None:
@@ -353,6 +361,8 @@ class AppConfigDialog(QWizard):
             "requirements_file": _empty_to_none(self._line_edit("requirements_file").text()),
             "init_command": _empty_to_none(self._line_edit("init_command").text()),
             "service_name": self._line_edit("service_name").text().strip(),
+            "service_account": _empty_to_none(self._line_edit("service_account").text()),
+            "service_password": _empty_to_none(self._line_edit("service_password").text()),
             "log_dir": self._line_edit("log_dir").text().strip(),
             "winsw_exe_path": self._line_edit("winsw_exe_path").text().strip(),
             "autostart_prod": self._check_box("autostart_prod").isChecked(),

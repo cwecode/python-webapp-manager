@@ -46,6 +46,19 @@ def test_registry_loads_valid_config(tmp_path: Path) -> None:
     assert len(configs) == 1
     assert configs[0].id == "demo"
     assert configs[0].port == 8000
+    assert configs[0].service_account is None
+
+
+def test_registry_loads_optional_service_account(tmp_path: Path) -> None:
+    config_dir = tmp_path / "apps"
+    config_dir.mkdir()
+    _write_config(config_dir / "demo.json", service_account=r".\Jobserver", service_password="secret")
+
+    registry = AppRegistry(config_dir)
+    config = registry.load_all()[0]
+
+    assert config.service_account == r".\Jobserver"
+    assert config.service_password == "secret"
 
 
 def test_registry_rejects_missing_required_field(tmp_path: Path) -> None:

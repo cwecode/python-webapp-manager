@@ -112,8 +112,29 @@ For service mode:
 
 1. Configure `mode=prod` or `mode=both`.
 2. Set `service_name`.
-3. Set or download WinSW.
-4. Click `Install Service`.
-5. Use `Start Service`, `Stop Service`, or `Restart Service`.
+3. If the app needs network shares, set `service_account` and `service_password`.
+4. Set or download WinSW.
+5. Click `Install Service`.
+6. Use `Start Service`, `Stop Service`, or `Restart Service`.
 
 Some service actions require Administrator rights.
+
+For a local Windows user on the same server, enter the account as:
+
+```text
+.\Jobserver
+```
+
+For a domain user, enter it as:
+
+```text
+DOMAIN\Jobserver
+```
+
+For `werkstatt_hub`, use the Windows account that can manually open the XML share:
+
+```text
+\\fs-igw\EnterpriseData\1 - Projekte\1 - Aufträge
+```
+
+If a service already exists, changing the account in App Manager is not enough by itself. Stop the service, uninstall it, install it again, then start it so Windows receives the new logon account. The service password is stored in the local App Manager config and the generated WinSW XML; keep the manager root restricted to administrators and the service owner.
